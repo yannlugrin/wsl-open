@@ -8,11 +8,31 @@ Opens files, directories, and URLs from WSL using the appropriate Windows applic
 
 ## Install
 
+### Quick install
+
 ```bash
-make install
+curl -fsSL https://raw.githubusercontent.com/yannlugrin/wsl-open/main/install.sh | bash
 ```
 
-This installs the `open` script to `/usr/local/bin/open`.
+Install a specific version:
+
+```bash
+VERSION=1.0.0 curl -fsSL https://raw.githubusercontent.com/yannlugrin/wsl-open/main/install.sh | bash
+```
+
+Change install prefix (default: `/usr/local`):
+
+```bash
+PREFIX=~/.local curl -fsSL https://raw.githubusercontent.com/yannlugrin/wsl-open/main/install.sh | bash
+```
+
+### From source
+
+```bash
+git clone https://github.com/yannlugrin/wsl-open.git
+cd wsl-open
+make install
+```
 
 To uninstall:
 
