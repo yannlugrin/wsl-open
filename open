@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="1.0.0"
+
+die() {
+  echo "open: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: open [-a app] [-eRtWfg] [target]
+
+Open files, directories, and URLs from WSL using Windows applications.
+
+Flags:
+  -a <app>     Open with a specific Windows application
+  -R           Reveal in Explorer (highlight the file)
+  -e           Open in text editor (VS Code or $WSL_OPEN_EDITOR)
+  -t           Alias for -e
+  -W           Wait for the application to exit
+  -f           Read stdin into a temp file, then open it
+  -g           Open in background (no-op; Windows apps already detach)
+  -h, --help   Show this help
+  -V, --version  Show version
+EOF
+}
+
+version() {
+  echo "open $VERSION (WSL)"
+}
