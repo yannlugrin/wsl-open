@@ -75,6 +75,8 @@ open file1.txt file2.txt          # Open multiple files
 | `-f` | Read from stdin, write to a temp file, then open it |
 | `-h`, `--help` | Show help |
 | `-V`, `--version` | Show version |
+| `--check-update` | Check if a newer version is available |
+| `--update` | Update to the latest version |
 
 ### Environment Variables
 

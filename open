@@ -2,6 +2,7 @@
 set -euo pipefail
 
 VERSION="1.0.0"
+REPO="yannlugrin/wsl-open"
 
 die() {
   echo "open: $*" >&2
@@ -24,7 +25,61 @@ Flags:
   -f           Read stdin into a temp file, then open it
   -h, --help   Show this help
   -V, --version  Show version
+  --check-update  Check if a newer version is available
+  --update        Update to the latest version
 EOF
+}
+
+fetch_latest_version() {
+  local url="https://api.github.com/repos/$REPO/releases/latest"
+  local response
+  response="$(curl -fsSL "$url" 2>/dev/null)" || die "failed to check for updates"
+  echo "$response" | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4
+}
+
+check_update() {
+  local latest
+  latest="$(fetch_latest_version)"
+  if [[ -z "$latest" ]]; then
+    die "could not determine latest version"
+  fi
+  if [[ "$latest" == "$VERSION" ]]; then
+    echo "open $VERSION is up to date."
+  else
+    echo "open $VERSION is outdated. Latest version: $latest"
+    echo "Run 'open --update' to update."
+  fi
+}
+
+self_update() {
+  local latest
+  latest="$(fetch_latest_version)"
+  if [[ -z "$latest" ]]; then
+    die "could not determine latest version"
+  fi
+  if [[ "$latest" == "$VERSION" ]]; then
+    echo "open $VERSION is already up to date."
+    exit 0
+  fi
+
+  local self
+  self="$(realpath "$0")"
+  local url="https://raw.githubusercontent.com/$REPO/$latest/open"
+  local tmpfile
+  tmpfile="$(mktemp)"
+
+  echo "Updating open $VERSION -> $latest..."
+  curl -fsSL "$url" -o "$tmpfile" 2>/dev/null || { rm -f "$tmpfile"; die "failed to download update"; }
+
+  if [[ -w "$self" ]]; then
+    mv "$tmpfile" "$self"
+    chmod +x "$self"
+  else
+    sudo mv "$tmpfile" "$self"
+    sudo chmod +x "$self"
+  fi
+
+  echo "Updated successfully: $(\"$self\" --version)"
 }
 
 version() {
@@ -55,6 +110,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)    usage; exit 0 ;;
     -V|--version) version; exit 0 ;;
+    --check-update) check_update; exit 0 ;;
+    --update)     self_update; exit 0 ;;
     -D)           flag_enclosing=true; shift ;;
     -R)           flag_reveal=true; shift ;;
     -e|-t)        flag_editor=true; shift ;;

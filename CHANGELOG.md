@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Install script for quick setup without cloning (`curl | bash`)
+- `--check-update` flag to check if a newer version is available
+- `--update` flag to self-update to the latest version
 
 ## [1.0.0] - 2026-03-06
 
