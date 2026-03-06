@@ -10,7 +10,7 @@ die() {
 
 usage() {
   cat <<'EOF'
-Usage: open [-a app] [-DeRtWfg] [target ...]
+Usage: open [-a app] [-DeRtWf] [target ...]
 
 Open files, directories, and URLs from WSL using Windows applications.
 
@@ -22,7 +22,6 @@ Flags:
   -t           Alias for -e
   -W           Wait for the application to exit
   -f           Read stdin into a temp file, then open it
-  -g           Open in background (no-op; Windows apps already detach)
   -h, --help   Show this help
   -V, --version  Show version
 EOF
@@ -49,7 +48,6 @@ flag_reveal=false
 flag_editor=false
 flag_wait=false
 flag_stdin=false
-flag_background=false
 app=""
 targets=()
 
@@ -62,7 +60,6 @@ while [[ $# -gt 0 ]]; do
     -e|-t)        flag_editor=true; shift ;;
     -W)           flag_wait=true; shift ;;
     -f)           flag_stdin=true; shift ;;
-    -g)           flag_background=true; shift ;;
     -a)
       [[ -n "${2:-}" ]] || die "-a requires an application name"
       app="$2"; shift 2 ;;

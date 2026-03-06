@@ -18,7 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `-e` / `-t` flag to open in text editor (notepad.exe or `$WSL_OPEN_EDITOR`)
 - `-W` flag to wait for the application to exit
 - `-f` flag to read from stdin into a temp file
-- `-g` flag for background open (no-op on Windows)
 - Support for multiple targets (`open file1 file2 file3`)
 - Makefile with `install` and `uninstall` targets
 

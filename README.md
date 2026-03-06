@@ -53,7 +53,6 @@ open file1.txt file2.txt          # Open multiple files
 | `-t` | Alias for `-e` |
 | `-W` | Wait for the application to exit before returning |
 | `-f` | Read from stdin, write to a temp file, then open it |
-| `-g` | Open in background (no-op on Windows; apps already detach) |
 | `-h`, `--help` | Show help |
 | `-V`, `--version` | Show version |
 
