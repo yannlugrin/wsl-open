@@ -31,13 +31,19 @@ PREFIX=~/.local curl -fsSL https://raw.githubusercontent.com/yannlugrin/wsl-open
 ```bash
 git clone https://github.com/yannlugrin/wsl-open.git
 cd wsl-open
-make install
+sudo make install
 ```
 
 To uninstall:
 
 ```bash
-make uninstall
+sudo make uninstall
+```
+
+To install to a custom prefix (no sudo needed):
+
+```bash
+make install PREFIX=~/.local
 ```
 
 ## Usage
