@@ -18,7 +18,7 @@ Flags:
   -a <app>     Open with a specific Windows application
   -D           Open the enclosing folder in Explorer
   -R           Reveal in Explorer (highlight the file)
-  -e           Open in text editor (VS Code or $WSL_OPEN_EDITOR)
+  -e           Open in text editor (notepad.exe or $WSL_OPEN_EDITOR)
   -t           Alias for -e
   -W           Wait for the application to exit
   -f           Read stdin into a temp file, then open it

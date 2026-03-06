@@ -34,7 +34,7 @@ open .                            # Open current directory in Explorer
 open ~/Documents/report.pdf       # Open file with default Windows app
 open -D ~/Documents/report.pdf    # Open enclosing folder in Explorer
 open -R ~/Documents/report.pdf    # Reveal file in Explorer
-open -e ~/.bashrc                 # Open in text editor (VS Code)
+open -e ~/.bashrc                 # Open in text editor (notepad.exe)
 open -a notepad.exe ~/.bashrc     # Open with specific Windows app
 open -W somefile.txt              # Wait for the app to close
 echo "hello" | open -f            # Read from stdin, open as temp file
@@ -49,7 +49,7 @@ open file1.txt file2.txt          # Open multiple files
 | `-a <app>` | Open with a specific Windows application |
 | `-D` | Open the enclosing folder in Explorer |
 | `-R` | Reveal in Explorer (highlight the file) |
-| `-e` | Open in text editor (VS Code by default) |
+| `-e` | Open in text editor (notepad.exe by default) |
 | `-t` | Alias for `-e` |
 | `-W` | Wait for the application to exit before returning |
 | `-f` | Read from stdin, write to a temp file, then open it |
@@ -61,7 +61,7 @@ open file1.txt file2.txt          # Open multiple files
 
 | Variable | Description |
 |----------|-------------|
-| `WSL_OPEN_EDITOR` | Override the default text editor (default: `code`) |
+| `WSL_OPEN_EDITOR` | Override the default text editor (default: `notepad.exe`) |
 
 ## Requirements
 

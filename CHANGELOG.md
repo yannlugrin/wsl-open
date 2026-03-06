@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `-a <app>` flag to open with a specific Windows application
 - `-D` flag to open the enclosing folder in Explorer
 - `-R` flag to reveal file in Explorer
-- `-e` / `-t` flag to open in text editor (VS Code or `$WSL_OPEN_EDITOR`)
+- `-e` / `-t` flag to open in text editor (notepad.exe or `$WSL_OPEN_EDITOR`)
 - `-W` flag to wait for the application to exit
 - `-f` flag to read from stdin into a temp file
 - `-g` flag for background open (no-op on Windows)
