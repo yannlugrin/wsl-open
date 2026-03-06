@@ -30,3 +30,101 @@ EOF
 version() {
   echo "open $VERSION (WSL)"
 }
+
+is_url() {
+  [[ "$1" =~ ^https?:// || "$1" =~ ^mailto: || "$1" =~ ^ftp:// ]]
+}
+
+resolve_path() {
+  local target="$1"
+  local resolved
+  resolved="$(readlink -f "$target")" || die "cannot resolve path: $target"
+  [[ -e "$resolved" ]] || die "no such file or directory: $target"
+  echo "$resolved"
+}
+
+to_winpath() {
+  wslpath -w "$1" 2>/dev/null || die "cannot convert path: $1"
+}
+
+# --- Argument parsing ---
+
+flag_reveal=false
+flag_editor=false
+flag_wait=false
+flag_stdin=false
+flag_background=false
+app=""
+target=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)    usage; exit 0 ;;
+    -V|--version) version; exit 0 ;;
+    -R)           flag_reveal=true; shift ;;
+    -e|-t)        flag_editor=true; shift ;;
+    -W)           flag_wait=true; shift ;;
+    -f)           flag_stdin=true; shift ;;
+    -g)           flag_background=true; shift ;;
+    -a)
+      [[ -n "${2:-}" ]] || die "-a requires an application name"
+      app="$2"; shift 2 ;;
+    --)           shift; target="${1:-}"; break ;;
+    -*)           die "unknown option: $1" ;;
+    *)            target="$1"; shift ;;
+  esac
+done
+
+# --- Stdin mode ---
+
+tmpfile=""
+cleanup() {
+  [[ -n "$tmpfile" && -f "$tmpfile" ]] && rm -f "$tmpfile"
+}
+trap cleanup EXIT
+
+if $flag_stdin; then
+  tmpfile="$(mktemp /tmp/wsl-open-XXXXXX)"
+  cat > "$tmpfile"
+  target="$tmpfile"
+fi
+
+# --- Validate target ---
+
+if [[ -z "$target" ]] && ! $flag_stdin; then
+  die "no target specified (use -h for help)"
+fi
+
+# --- Dispatch ---
+
+if is_url "$target"; then
+  cmd.exe /C start "" "$target" 2>/dev/null
+elif $flag_reveal; then
+  resolved="$(resolve_path "$target")"
+  winpath="$(to_winpath "$resolved")"
+  explorer.exe /select,"$winpath" 2>/dev/null
+elif $flag_editor; then
+  resolved="$(resolve_path "$target")"
+  editor="${WSL_OPEN_EDITOR:-code}"
+  "$editor" "$resolved"
+elif [[ -n "$app" ]]; then
+  resolved="$(resolve_path "$target")"
+  winpath="$(to_winpath "$resolved")"
+  if $flag_wait; then
+    cmd.exe /C start "" /WAIT "$app" "$winpath" 2>/dev/null
+  else
+    cmd.exe /C start "" "$app" "$winpath" 2>/dev/null
+  fi
+elif [[ -d "$target" ]]; then
+  resolved="$(resolve_path "$target")"
+  winpath="$(to_winpath "$resolved")"
+  explorer.exe "$winpath" 2>/dev/null
+else
+  resolved="$(resolve_path "$target")"
+  winpath="$(to_winpath "$resolved")"
+  if $flag_wait; then
+    cmd.exe /C start "" /WAIT "$winpath" 2>/dev/null
+  else
+    cmd.exe /C start "" "$winpath" 2>/dev/null
+  fi
+fi
