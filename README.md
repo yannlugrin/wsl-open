@@ -4,6 +4,8 @@ A macOS-like `open` command for WSL (Windows Subsystem for Linux).
 
 Opens files, directories, and URLs from WSL using the appropriate Windows application — just like `open` works on macOS.
 
+- Repository: <https://github.com/yannlugrin/wsl-open>
+
 ## Install
 
 ```bash
