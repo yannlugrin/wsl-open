@@ -21,7 +21,7 @@ make uninstall
 ## Usage
 
 ```
-open [flags] [target]
+open [flags] [target ...]
 ```
 
 ### Examples
@@ -30,11 +30,13 @@ open [flags] [target]
 open https://example.com          # Open URL in default browser
 open .                            # Open current directory in Explorer
 open ~/Documents/report.pdf       # Open file with default Windows app
+open -D ~/Documents/report.pdf    # Open enclosing folder in Explorer
 open -R ~/Documents/report.pdf    # Reveal file in Explorer
 open -e ~/.bashrc                 # Open in text editor (VS Code)
 open -a notepad.exe ~/.bashrc     # Open with specific Windows app
 open -W somefile.txt              # Wait for the app to close
 echo "hello" | open -f            # Read from stdin, open as temp file
+open file1.txt file2.txt          # Open multiple files
 ```
 
 ### Flags
@@ -43,6 +45,7 @@ echo "hello" | open -f            # Read from stdin, open as temp file
 |------|-------------|
 | (none) | Open target with default Windows app |
 | `-a <app>` | Open with a specific Windows application |
+| `-D` | Open the enclosing folder in Explorer |
 | `-R` | Reveal in Explorer (highlight the file) |
 | `-e` | Open in text editor (VS Code by default) |
 | `-t` | Alias for `-e` |

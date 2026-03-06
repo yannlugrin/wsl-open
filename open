@@ -10,12 +10,13 @@ die() {
 
 usage() {
   cat <<'EOF'
-Usage: open [-a app] [-eRtWfg] [target]
+Usage: open [-a app] [-DeRtWfg] [target ...]
 
 Open files, directories, and URLs from WSL using Windows applications.
 
 Flags:
   -a <app>     Open with a specific Windows application
+  -D           Open the enclosing folder in Explorer
   -R           Reveal in Explorer (highlight the file)
   -e           Open in text editor (VS Code or $WSL_OPEN_EDITOR)
   -t           Alias for -e
@@ -43,18 +44,20 @@ to_winpath() {
 
 # --- Argument parsing ---
 
+flag_enclosing=false
 flag_reveal=false
 flag_editor=false
 flag_wait=false
 flag_stdin=false
 flag_background=false
 app=""
-target=""
+targets=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)    usage; exit 0 ;;
     -V|--version) version; exit 0 ;;
+    -D)           flag_enclosing=true; shift ;;
     -R)           flag_reveal=true; shift ;;
     -e|-t)        flag_editor=true; shift ;;
     -W)           flag_wait=true; shift ;;
@@ -63,9 +66,9 @@ while [[ $# -gt 0 ]]; do
     -a)
       [[ -n "${2:-}" ]] || die "-a requires an application name"
       app="$2"; shift 2 ;;
-    --)           shift; target="${1:-}"; break ;;
+    --)           shift; targets+=("$@"); break ;;
     -*)           die "unknown option: $1" ;;
-    *)            target="$1"; shift ;;
+    *)            targets+=("$1"); shift ;;
   esac
 done
 
@@ -80,45 +83,63 @@ trap cleanup EXIT
 if $flag_stdin; then
   tmpfile="$(mktemp /tmp/wsl-open-XXXXXX)"
   cat > "$tmpfile"
-  target="$tmpfile"
+  targets+=("$tmpfile")
 fi
 
-# --- Validate target ---
+# --- Validate targets ---
 
-if [[ -z "$target" ]] && ! $flag_stdin; then
+if [[ ${#targets[@]} -eq 0 ]]; then
   die "no target specified (use -h for help)"
 fi
 
 # --- Dispatch ---
 
-if is_url "$target"; then
-  cmd.exe /C start "" "$target" 2>/dev/null
-elif $flag_reveal; then
-  winpath="$(to_winpath "$target")"
-  explorer.exe /select,"$winpath" 2>/dev/null
-elif $flag_editor; then
-  editor="${WSL_OPEN_EDITOR:-notepad.exe}"
-  editor_path="$(command -v "$editor" 2>/dev/null)" || die "editor not found: $editor"
-  if [[ "$editor_path" == /mnt/* ]]; then
-    "$editor" "$(to_winpath "$target")"
+open_target() {
+  local target="$1"
+
+  if is_url "$target"; then
+    cmd.exe /C start "" "$target" 2>/dev/null
+  elif $flag_enclosing; then
+    local parent winpath
+    parent="$(dirname "$target")"
+    winpath="$(to_winpath "$parent")"
+    explorer.exe "$winpath" 2>/dev/null
+  elif $flag_reveal; then
+    local winpath
+    winpath="$(to_winpath "$target")"
+    explorer.exe /select,"$winpath" 2>/dev/null
+  elif $flag_editor; then
+    local editor="${WSL_OPEN_EDITOR:-notepad.exe}"
+    local editor_path
+    editor_path="$(command -v "$editor" 2>/dev/null)" || die "editor not found: $editor"
+    if [[ "$editor_path" == /mnt/* ]]; then
+      "$editor" "$(to_winpath "$target")"
+    else
+      "$editor" "$target"
+    fi
+  elif [[ -n "$app" ]]; then
+    local winpath
+    winpath="$(to_winpath "$target")"
+    if $flag_wait; then
+      cmd.exe /C start "" /WAIT "$app" "$winpath" 2>/dev/null
+    else
+      cmd.exe /C start "" "$app" "$winpath" 2>/dev/null
+    fi
+  elif [[ -d "$target" ]]; then
+    local winpath
+    winpath="$(to_winpath "$target")"
+    explorer.exe "$winpath" 2>/dev/null
   else
-    "$editor" "$target"
+    local winpath
+    winpath="$(to_winpath "$target")"
+    if $flag_wait; then
+      cmd.exe /C start "" /WAIT "$winpath" 2>/dev/null
+    else
+      cmd.exe /C start "" "$winpath" 2>/dev/null
+    fi
   fi
-elif [[ -n "$app" ]]; then
-  winpath="$(to_winpath "$target")"
-  if $flag_wait; then
-    cmd.exe /C start "" /WAIT "$app" "$winpath" 2>/dev/null
-  else
-    cmd.exe /C start "" "$app" "$winpath" 2>/dev/null
-  fi
-elif [[ -d "$target" ]]; then
-  winpath="$(to_winpath "$target")"
-  explorer.exe "$winpath" 2>/dev/null
-else
-  winpath="$(to_winpath "$target")"
-  if $flag_wait; then
-    cmd.exe /C start "" /WAIT "$winpath" 2>/dev/null
-  else
-    cmd.exe /C start "" "$winpath" 2>/dev/null
-  fi
-fi
+}
+
+for target in "${targets[@]}"; do
+  open_target "$target"
+done
