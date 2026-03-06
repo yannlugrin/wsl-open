@@ -21,5 +21,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for multiple targets (`open file1 file2 file3`)
 - Makefile with `install` and `uninstall` targets
 
-[Unreleased]: https://github.com/yannlugrin/wsl-open/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/yannlugrin/wsl-open/releases/tag/v1.0.0
+[Unreleased]: https://github.com/yannlugrin/wsl-open/compare/1.0.0...HEAD
+[1.0.0]: https://github.com/yannlugrin/wsl-open/releases/tag/1.0.0
