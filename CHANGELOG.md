@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--args`**, matching macOS `open(1)`: everything after it is passed to the
+  launched application instead of being opened.
+
 - **`--install-xdg` / `--uninstall-xdg`**: register winopen as the system
   `xdg-open`, so links opened by other programs route through it rather than
   only what you type yourself. The shim is a symlink that shadows any packaged
@@ -43,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--` never worked for the one thing it exists for.** It stopped our own
+  parser reading `-weird-name.txt` as flags, and then `wslpath` and `dirname`
+  read it as *their* flags and failed. `open -- -weird-name.txt` now opens the
+  file, as do `-R`, `-D` and a dash-named directory.
 - **`-f` opened the wrong application, and deleted the temp file before it
   could be read.** The temp file had no extension, so Windows had no
   association for it, and the `EXIT` trap removed it while `start` was still

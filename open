@@ -11,7 +11,7 @@ die() {
 
 usage() {
   cat <<'EOF'
-Usage: open [-a app] [-u url] [-DeRtWf] [target ...]
+Usage: open [-a app] [-u url] [-DeRtWf] [target ...] [--args arg ...]
 
 Open files, directories, and URLs from WSL using Windows applications.
 
@@ -25,6 +25,8 @@ Flags:
   -t           Open in the default text editor ($WINOPEN_EDITOR, else notepad.exe)
   -W           Wait for the application to exit
   -f           Read stdin into a temp file, then open it in the text editor
+  --args <...> Pass all remaining arguments to the launched application
+  --           Treat all remaining arguments as targets
   -h, --help   Show this help
   -V, --version  Show version
   --check-update  Check if a newer version is available
@@ -116,9 +118,12 @@ is_url() {
   [[ "$1" =~ ^[a-zA-Z][a-zA-Z0-9+.-]*: ]] && [[ ! -e "$1" ]]
 }
 
+# The -- matters: without it wslpath reads a target named "-foo" as its own
+# flags and prints its usage, so `open -- -foo` protected our parser and then
+# failed here anyway. Same for dirname below.
 to_winpath() {
   [[ -e "$1" ]] || die "no such file or directory: $1"
-  wslpath -aw "$1" 2>/dev/null || die "cannot convert path: $1"
+  wslpath -aw -- "$1" 2>/dev/null || die "cannot convert path: $1"
 }
 
 # explorer.exe returns 1 whether it succeeded or not, so its status carries no
@@ -133,9 +138,9 @@ run_explorer() {
 # the same call as the -a branch of open_target minus the document.
 launch_app() {
   if $flag_wait; then
-    cmd.exe /C start "" /WAIT "$app" 2>/dev/null
+    cmd.exe /C start "" /WAIT "$app" "${app_args[@]}" 2>/dev/null
   else
-    cmd.exe /C start "" "$app" 2>/dev/null
+    cmd.exe /C start "" "$app" "${app_args[@]}" 2>/dev/null
   fi
 }
 
@@ -165,7 +170,7 @@ open_target() {
     cmd.exe /C start "" "$target" 2>/dev/null
   elif $flag_enclosing; then
     local parent winpath
-    parent="$(dirname "$target")"
+    parent="$(dirname -- "$target")"
     winpath="$(to_winpath "$parent")"
     run_explorer "$winpath"
   elif $flag_reveal; then
@@ -186,9 +191,9 @@ open_target() {
     local winpath
     winpath="$(to_winpath "$target")"
     if $flag_wait; then
-      cmd.exe /C start "" /WAIT "$app" "$winpath" 2>/dev/null
+      cmd.exe /C start "" /WAIT "$app" "$winpath" "${app_args[@]}" 2>/dev/null
     else
-      cmd.exe /C start "" "$app" "$winpath" 2>/dev/null
+      cmd.exe /C start "" "$app" "$winpath" "${app_args[@]}" 2>/dev/null
     fi
   elif [[ -d "$target" ]]; then
     local winpath
@@ -198,9 +203,9 @@ open_target() {
     local winpath
     winpath="$(to_winpath "$target")"
     if $flag_wait; then
-      cmd.exe /C start "" /WAIT "$winpath" 2>/dev/null
+      cmd.exe /C start "" /WAIT "$winpath" "${app_args[@]}" 2>/dev/null
     else
-      cmd.exe /C start "" "$winpath" 2>/dev/null
+      cmd.exe /C start "" "$winpath" "${app_args[@]}" 2>/dev/null
     fi
   fi
 }
@@ -372,6 +377,10 @@ flag_enclosing=false
 flag_reveal=false
 flag_wait=false
 
+# Everything after --args, passed to the launched application rather than
+# opened. Kept apart from targets so the two cannot be confused.
+app_args=()
+
 # "" | textedit (-e) | default (-t). macOS keeps these apart: -e names one
 # application, -t asks the system which one handles text. Holding both in a
 # single variable makes the later flag win, as a repeated flag normally does.
@@ -416,6 +425,10 @@ while [[ $# -gt 0 ]]; do
     -u)
       [[ -n "${2:-}" ]] || die "-u requires a URL"
       add_target "$2" true; shift 2 ;;
+    --args)
+      shift
+      app_args=("$@")
+      break ;;
     --)
       shift
       for arg in "$@"; do add_target "$arg"; done

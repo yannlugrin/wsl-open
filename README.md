@@ -71,6 +71,8 @@ open -W somefile.txt              # Wait for the app to close
 echo "hello" | open -f            # Read stdin, open it in the text editor
 open file1.txt file2.txt          # Open multiple files
 open -a notepad.exe               # Launch an app with no document
+open -a chrome.exe --args --incognito
+open -- -weird-name.txt           # A target whose name starts with a dash
 ```
 
 ### Flags
@@ -86,12 +88,34 @@ open -a notepad.exe               # Launch an app with no document
 | `-t` | Open in the default text editor (`$WINOPEN_EDITOR`, else `notepad.exe`) |
 | `-W` | Wait for the application to exit before returning |
 | `-f` | Read stdin into a temp file, then open it in the text editor (as `-t`) |
+| `--args <...>` | Pass all remaining arguments to the launched application |
+| `--` | Treat all remaining arguments as targets |
 | `-h`, `--help` | Show help |
 | `-V`, `--version` | Show version |
 | `--check-update` | Check if a newer version is available |
 | `--update` | Update to the latest version |
 | `--install-xdg` | Install an `xdg-open` shim so other programs route through winopen |
 | `--uninstall-xdg` | Remove the shim and restore any backup |
+
+### Passing arguments, and targets that look like flags
+
+`--args` passes everything after it to the launched application rather than
+opening it, as macOS `open(1)` does:
+
+```bash
+open -a chrome.exe --args --incognito
+```
+
+`--` is the opposite: everything after it is a target, however it is spelled.
+This is an extension — `open(1)` does not document it — kept because it is the
+usual Unix convention and the only way to open a file whose name begins with a
+dash:
+
+```bash
+open -- -weird-name.txt
+```
+
+Whichever of the two comes first claims the rest of the command line.
 
 ### No target
 
