@@ -22,6 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`-u <url>`**, matching macOS `open(1)`: open a URL with whatever application
   claims its scheme, even when a file of that name exists.
 
+### Changed
+
+- **`-e` and `-t` are no longer the same flag.** Matching macOS `open(1)`, where
+  `-e` names one application and `-t` asks the system which one handles text:
+  `-e` is now always `notepad.exe`, and only `-t` honours `$WINOPEN_EDITOR`.
+  Scripts relying on `-e` picking up `$WINOPEN_EDITOR` should use `-t`.
+
+  `-t` should ask Windows what it has registered for `.txt`. It does not yet:
+  on Windows 11 that is a Store app, and reaching it needs `ShellExecuteEx`
+  with `SEE_MASK_CLASSNAME`, which lands with the PowerShell work in #10. Until
+  then `-t` without `$WINOPEN_EDITOR` falls back to `notepad.exe`.
+
 ### Fixed
 
 - **`open` exited 1 on every successful call.** The `EXIT` trap ended on a

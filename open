@@ -21,8 +21,8 @@ Flags:
                even if a file of that name exists
   -D           Open the enclosing folder in Explorer
   -R           Reveal in Explorer (highlight the file)
-  -e           Open in text editor (notepad.exe or $WINOPEN_EDITOR)
-  -t           Alias for -e
+  -e           Open in notepad.exe
+  -t           Open in the default text editor ($WINOPEN_EDITOR, else notepad.exe)
   -W           Wait for the application to exit
   -f           Read stdin into a temp file, then open it
   -h, --help   Show this help
@@ -129,6 +129,24 @@ run_explorer() {
   explorer.exe "$@" 2>/dev/null || true
 }
 
+# notepad.exe is the TextEdit analogue, so -e is pinned to it and only -t takes
+# the override.
+#
+# -t should ask Windows what it has registered for .txt. On Windows 11 that is
+# a Store app, and every cheap way of reaching it is a dead end: `ftype` returns
+# nothing for the file type `assoc` reports, the UserChoice key holds an AppX id
+# with no command line, and the resolved path under WindowsApps is unreadable
+# from WSL -- launching it by path hangs. Doing it properly needs ShellExecuteEx
+# with SEE_MASK_CLASSNAME, which arrives with the PowerShell work in #10. Until
+# then -t lands on the same notepad.exe, and #12 records the gap.
+resolve_editor() {
+  if [[ "$editor_mode" == "textedit" ]]; then
+    echo "notepad.exe"
+  else
+    echo "${WINOPEN_EDITOR:-notepad.exe}"
+  fi
+}
+
 open_target() {
   local target="$1"
   local forced_url="$2"
@@ -144,8 +162,9 @@ open_target() {
     local winpath
     winpath="$(to_winpath "$target")"
     run_explorer /select,"$winpath"
-  elif $flag_editor; then
-    local editor="${WINOPEN_EDITOR:-notepad.exe}"
+  elif [[ -n "$editor_mode" ]]; then
+    local editor
+    editor="$(resolve_editor)"
     local editor_path
     editor_path="$(command -v "$editor" 2>/dev/null)" || die "editor not found: $editor"
     if [[ "$editor_path" == /mnt/* ]]; then
@@ -341,8 +360,12 @@ uninstall_xdg() {
 
 flag_enclosing=false
 flag_reveal=false
-flag_editor=false
 flag_wait=false
+
+# "" | textedit (-e) | default (-t). macOS keeps these apart: -e names one
+# application, -t asks the system which one handles text. Holding both in a
+# single variable makes the later flag win, as a repeated flag normally does.
+editor_mode=""
 flag_stdin=false
 app=""
 
@@ -373,7 +396,8 @@ while [[ $# -gt 0 ]]; do
     --uninstall-xdg) uninstall_xdg; exit 0 ;;
     -D)           flag_enclosing=true; shift ;;
     -R)           flag_reveal=true; shift ;;
-    -e|-t)        flag_editor=true; shift ;;
+    -e)           editor_mode="textedit"; shift ;;
+    -t)           editor_mode="default"; shift ;;
     -W)           flag_wait=true; shift ;;
     -f)           flag_stdin=true; shift ;;
     -a)
