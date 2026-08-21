@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A "Parity with macOS `open(1)`" section in the README**, listing what is
+  supported, what is not and why, and every deliberate deviation — so parity
+  claims are honest and a deliberate omission is not mistaken for a bug.
+
 - **`-n`**, matching macOS `open(1)`: open a new instance rather than letting a
   running one take the target. Windows has no general switch for this, so it
   uses the application's own flag and knows the common browsers. For anything

@@ -280,6 +280,78 @@ through winopen as well, add this yourself:
 export BROWSER=/usr/local/bin/xdg-open
 ```
 
+## Parity with macOS `open(1)`
+
+macOS `open(1)` is the reference for flag names and semantics. Where winopen
+diverges it is on purpose, and it is listed here.
+
+### Supported
+
+| Flag | Notes |
+|------|-------|
+| `-a <app>` | |
+| `-e` | `notepad.exe`, the TextEdit analogue |
+| `-t` | `$WINOPEN_EDITOR`, else whatever Windows registered for `.txt` |
+| `-f` | Writes a `.txt` temp file and opens it as `-t`. The file is left for the system to reap |
+| `-W` | |
+| `-R` | Reveals in Explorer rather than Finder |
+| `-u <url>` | |
+| `--args` | |
+| `-n` | **Partial.** See below |
+
+### Not supported
+
+| Flag | Why |
+|------|-----|
+| `-b <bundle id>` | Windows has no bundle identifiers |
+| `-g` | Windows offers no way to do it. `ShellExecuteEx` with `SW_SHOWNOACTIVATE` is only a hint, and every application tested ignores it and takes the foreground anyway — verified against a Store app, a Win32 app, and a cold start, on Windows 11 build 26200 |
+| `-F` | No Windows equivalent of launching without restoring windows |
+| `-j` | Launch hidden: no clean equivalent, little value |
+| `-s <sdk>` | Xcode-specific, and paired with macOS's `-h` |
+| `--env` | Niche |
+| `--stdin`, `--stdout`, `--stderr` | Niche |
+| `--arch` | Not applicable |
+
+### Deliberate deviations
+
+**`-h` means help here.** On macOS it searches header locations for a matching
+header and opens it. This is the one place winopen actively contradicts
+`open(1)`, and it is not going to change: `-h` is help everywhere else on this
+platform.
+
+**`-n` is a partial guarantee.** macOS has an API for launching a new instance.
+Windows does not — `ShellExecute` asks the application, and most single-instance
+themselves. winopen passes the application's own new-window flag and knows the
+common browsers; for anything else it opens the target and says the guarantee
+was not available, rather than refusing. See [New instances](#new-instances).
+
+**`-e` and `-t` reject URLs**, as do `-R` and `-D`. They need a file to point
+at. macOS is not explicit about this; ignoring the flag silently seemed worse
+than saying so.
+
+**An unopenable URL cannot be reported.** macOS `open` errors when nothing
+claims a scheme. Windows reports success unconditionally, so a `0` from winopen
+means the URL was handed over, not that anything opened it.
+
+### Extensions with no macOS counterpart
+
+| Flag | |
+|------|--|
+| `-D` | Open the enclosing folder in Explorer. Not a macOS flag at all — `open(1)` has `-R` but no `-D` |
+| `--` | Everything after it is a target. `open(1)` does not document it, but it is the usual Unix convention and the only way to open a file whose name begins with a dash |
+| `-V`, `--version` | |
+| `--check-update`, `--update` | |
+| `--install-xdg`, `--uninstall-xdg` | Registering as the system `xdg-open`. See [xdg-open integration](#xdg-open-integration) |
+
+| Variable | |
+|----------|--|
+| `WINOPEN_EDITOR` | The editor `-t` uses |
+| `WINOPEN_XDG` | Set to `0` to bypass the `xdg-open` shim |
+
+The `xdg-open` shim has its own contract, which is not `open(1)`'s — one target,
+and `xdg-open`'s documented exit codes. It never returns `4` ("the action
+failed"), because Windows does not report whether the action succeeded.
+
 ## Requirements
 
 - WSL (Windows Subsystem for Linux)
