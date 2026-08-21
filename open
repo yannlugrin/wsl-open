@@ -2,7 +2,7 @@
 set -euo pipefail
 
 VERSION="1.0.1"
-REPO="yannlugrin/wsl-open"
+REPO="yannlugrin/winopen"
 
 die() {
   echo "open: $*" >&2
@@ -19,7 +19,7 @@ Flags:
   -a <app>     Open with a specific Windows application
   -D           Open the enclosing folder in Explorer
   -R           Reveal in Explorer (highlight the file)
-  -e           Open in text editor (notepad.exe or $WSL_OPEN_EDITOR)
+  -e           Open in text editor (notepad.exe or $WINOPEN_EDITOR)
   -t           Alias for -e
   -W           Wait for the application to exit
   -f           Read stdin into a temp file, then open it
@@ -135,7 +135,7 @@ cleanup() {
 trap cleanup EXIT
 
 if $flag_stdin; then
-  tmpfile="$(mktemp /tmp/wsl-open-XXXXXX)"
+  tmpfile="$(mktemp /tmp/winopen-XXXXXX)"
   cat > "$tmpfile"
   targets+=("$tmpfile")
 fi
@@ -163,7 +163,7 @@ open_target() {
     winpath="$(to_winpath "$target")"
     explorer.exe /select,"$winpath" 2>/dev/null
   elif $flag_editor; then
-    local editor="${WSL_OPEN_EDITOR:-notepad.exe}"
+    local editor="${WINOPEN_EDITOR:-notepad.exe}"
     local editor_path
     editor_path="$(command -v "$editor" 2>/dev/null)" || die "editor not found: $editor"
     if [[ "$editor_path" == /mnt/* ]]; then

@@ -1,36 +1,38 @@
-# open
+# winopen
 
-A macOS-like `open` command for WSL (Windows Subsystem for Linux).
+Open files, directories and URLs from WSL in Windows applications.
 
-Opens files, directories, and URLs from WSL using the appropriate Windows application — just like `open` works on macOS.
+A drop-in replacement for `xdg-open`, with the richer command set of macOS's `open`: reveal in Explorer, wait for the application to exit, choose which application to use, open in an editor, read from stdin.
 
-- Repository: <https://github.com/yannlugrin/wsl-open>
+The installed command is called `open`.
+
+- Repository: <https://github.com/yannlugrin/winopen>
 
 ## Install
 
 ### Quick install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yannlugrin/wsl-open/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yannlugrin/winopen/main/install.sh | bash
 ```
 
 Install a specific version:
 
 ```bash
-VERSION=1.0.0 curl -fsSL https://raw.githubusercontent.com/yannlugrin/wsl-open/main/install.sh | bash
+VERSION=1.0.0 curl -fsSL https://raw.githubusercontent.com/yannlugrin/winopen/main/install.sh | bash
 ```
 
 Change install prefix (default: `/usr/local`):
 
 ```bash
-PREFIX=~/.local curl -fsSL https://raw.githubusercontent.com/yannlugrin/wsl-open/main/install.sh | bash
+PREFIX=~/.local curl -fsSL https://raw.githubusercontent.com/yannlugrin/winopen/main/install.sh | bash
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/yannlugrin/wsl-open.git
-cd wsl-open
+git clone https://github.com/yannlugrin/winopen.git
+cd winopen
 sudo make install
 ```
 
@@ -88,7 +90,7 @@ open file1.txt file2.txt          # Open multiple files
 
 | Variable | Description |
 |----------|-------------|
-| `WSL_OPEN_EDITOR` | Override the default text editor (default: `notepad.exe`) |
+| `WINOPEN_EDITOR` | Override the default text editor (default: `notepad.exe`) |
 
 ## Requirements
 

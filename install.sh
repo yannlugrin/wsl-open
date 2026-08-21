@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="yannlugrin/wsl-open"
+REPO="yannlugrin/winopen"
 PREFIX="${PREFIX:-/usr/local}"
 DEST="$PREFIX/bin/open"
 
@@ -12,7 +12,7 @@ fi
 
 URL="https://raw.githubusercontent.com/$REPO/$VERSION/open"
 
-echo "Installing wsl-open $VERSION to $DEST..."
+echo "Installing winopen $VERSION to $DEST..."
 
 sudo_cmd=""
 if [[ ! -w "$(dirname "$DEST")" ]]; then
