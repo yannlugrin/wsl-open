@@ -46,6 +46,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Every modifier flag was silently ignored for URLs.** The URL test was the
+  first branch of the dispatch chain and answered the whole question, so
+  `open -a chrome.exe https://example.com` did not use Chrome and `-W` did
+  nothing. Addressing the target and choosing what opens it are now separate
+  decisions. `-R`, `-D`, `-e` and `-t` need a file and now say so instead of
+  vanishing.
+- **`-e` and `-t` waited for the editor to exit, and `-W` did nothing for
+  them.** They launched the editor in the foreground rather than through
+  `start` — 5s with and without `-W` against an editor that sleeps 5s. Windows
+  editors now go through `start` like everything else. A Linux editor is still
+  run in place, where blocking is what a terminal editor wants.
 - **`--` never worked for the one thing it exists for.** It stopped our own
   parser reading `-weird-name.txt` as flags, and then `wslpath` and `dirname`
   read it as *their* flags and failed. `open -- -weird-name.txt` now opens the

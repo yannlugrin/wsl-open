@@ -138,6 +138,11 @@ file. `-u` says the opposite: open it as a URL regardless.
 Windows reports success for a scheme nothing has registered, so `open` cannot
 tell you when a URL had nowhere to go.
 
+`-a`, `-W` and `--args` apply to URLs as they do to files, so
+`open -a chrome.exe https://example.com` really does use Chrome. `-R`, `-D`,
+`-e` and `-t` need a file to point at and are rejected for a URL rather than
+silently ignored.
+
 ### Reading from stdin
 
 `-f` writes standard input to a temporary `.txt` file and opens it in the text
