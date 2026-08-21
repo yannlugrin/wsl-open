@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Only the first directory of a multi-target call was opened.** `explorer.exe`
   returns 1 whether it succeeded or not; under `set -euo pipefail` that ended the
   run after the first target.
+- **`--update` ended with an error and an empty version.** Backslash-escaped
+  quotes are literal inside `$( )`, so the final line ran a command whose name
+  included the quotes. The update itself had already succeeded; only the report
+  of it was broken.
 
 ### Changed
 

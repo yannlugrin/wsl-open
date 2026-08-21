@@ -81,7 +81,7 @@ self_update() {
     sudo chmod +x "$self"
   fi
 
-  echo "Updated successfully: $(\"$self\" --version)"
+  echo "Updated successfully: $("$self" --version)"
 }
 
 version() {
