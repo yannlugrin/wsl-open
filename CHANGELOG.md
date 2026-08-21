@@ -46,10 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-e` is now always `notepad.exe`, and only `-t` honours `$WINOPEN_EDITOR`.
   Scripts relying on `-e` picking up `$WINOPEN_EDITOR` should use `-t`.
 
-  `-t` should ask Windows what it has registered for `.txt`. It does not yet:
-  on Windows 11 that is a Store app, and reaching it needs `ShellExecuteEx`
-  with `SEE_MASK_CLASSNAME`, which lands with the PowerShell work in #10. Until
-  then `-t` without `$WINOPEN_EDITOR` falls back to `notepad.exe`.
+  With `$WINOPEN_EDITOR` unset, `-t` now asks Windows what it has registered for
+  `.txt` and opens the file with that, whatever the file's own extension is. It
+  needs `powershell.exe` to ask, and falls back to `notepad.exe` without it.
 
 ### Fixed
 

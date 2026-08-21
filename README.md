@@ -85,7 +85,7 @@ open -- -weird-name.txt           # A target whose name starts with a dash
 | `-D` | Open the enclosing folder in Explorer |
 | `-R` | Reveal in Explorer (highlight the file) |
 | `-e` | Open in `notepad.exe` |
-| `-t` | Open in the default text editor (`$WINOPEN_EDITOR`, else `notepad.exe`) |
+| `-t` | Open in the default text editor (`$WINOPEN_EDITOR`, else whatever Windows registered for `.txt`) |
 | `-W` | Wait for the application to exit before returning |
 | `-n` | Open a new instance, rather than reusing a running one |
 | `-f` | Read stdin into a temp file, then open it in the text editor (as `-t`) |
@@ -97,6 +97,18 @@ open -- -weird-name.txt           # A target whose name starts with a dash
 | `--update` | Update to the latest version |
 | `--install-xdg` | Install an `xdg-open` shim so other programs route through winopen |
 | `--uninstall-xdg` | Remove the shim and restore any backup |
+
+### Text editors
+
+`-e` always uses `notepad.exe`. `-t` uses `$WINOPEN_EDITOR` if set, and
+otherwise opens the file with whatever Windows has registered for `.txt` —
+whatever the file's own extension happens to be.
+
+That last part asks Windows directly, via `ShellExecuteEx` with
+`SEE_MASK_CLASSNAME`, because there is no cheaper way to reach it: on Windows 11
+the `.txt` handler is a Store app that `ftype` cannot name and whose path is
+unreadable from WSL. It needs `powershell.exe`; without it, `-t` falls back to
+`notepad.exe`.
 
 ### New instances
 
@@ -184,7 +196,7 @@ would race whatever is opening it. It is left in `/tmp` for the system to reap.
 
 | Variable | Description |
 |----------|-------------|
-| `WINOPEN_EDITOR` | The editor `-t` uses (default: `notepad.exe`). `-e` ignores it. |
+| `WINOPEN_EDITOR` | The editor `-t` uses. Unset, `-t` asks Windows what handles `.txt`. `-e` ignores it. |
 | `WINOPEN_XDG` | Set to `0` to bypass the `xdg-open` shim for one command |
 
 ## xdg-open integration
