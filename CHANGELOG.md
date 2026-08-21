@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--install-xdg` / `--uninstall-xdg`**: register winopen as the system
+  `xdg-open`, so links opened by other programs route through it rather than
+  only what you type yourself. The shim is a symlink that shadows any packaged
+  `/usr/bin/xdg-open` without touching it, and honours `xdg-open`'s own
+  contract — one target, and its documented exit codes — rather than `open`'s.
+  Installing winopen does not install the shim; it is a separate, reversible
+  step.
+- **`WINOPEN_XDG=0`** bypasses the shim for one command, handing the target to
+  the `xdg-open` it shadows. The shim never falls back on its own: Windows
+  reports success unconditionally, so there is no failure to detect.
 - **`-u <url>`**, matching macOS `open(1)`: open a URL with whatever application
   claims its scheme, even when a file of that name exists.
 

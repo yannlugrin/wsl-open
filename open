@@ -29,6 +29,23 @@ Flags:
   -V, --version  Show version
   --check-update  Check if a newer version is available
   --update        Update to the latest version
+  --install-xdg   Install an xdg-open shim into $PREFIX/bin (default /usr/local)
+  --uninstall-xdg Remove the xdg-open shim and restore any backup
+EOF
+}
+
+xdg_usage() {
+  cat <<'EOF'
+Usage: xdg-open { file | URL }
+       xdg-open { --help | --manual | --version }
+
+winopen's xdg-open shim: opens the target with the Windows application that
+claims it. Installed by `open --install-xdg`, removed by `open --uninstall-xdg`.
+
+Set WINOPEN_XDG=0 to bypass the shim and use the xdg-open it shadows.
+
+Exit codes: 0 success, 1 command line syntax, 2 file did not exist,
+3 no xdg-open to delegate to.
 EOF
 }
 
@@ -112,6 +129,213 @@ run_explorer() {
   explorer.exe "$@" 2>/dev/null || true
 }
 
+open_target() {
+  local target="$1"
+  local forced_url="$2"
+
+  if $forced_url || is_url "$target"; then
+    cmd.exe /C start "" "$target" 2>/dev/null
+  elif $flag_enclosing; then
+    local parent winpath
+    parent="$(dirname "$target")"
+    winpath="$(to_winpath "$parent")"
+    run_explorer "$winpath"
+  elif $flag_reveal; then
+    local winpath
+    winpath="$(to_winpath "$target")"
+    run_explorer /select,"$winpath"
+  elif $flag_editor; then
+    local editor="${WINOPEN_EDITOR:-notepad.exe}"
+    local editor_path
+    editor_path="$(command -v "$editor" 2>/dev/null)" || die "editor not found: $editor"
+    if [[ "$editor_path" == /mnt/* ]]; then
+      "$editor" "$(to_winpath "$target")"
+    else
+      "$editor" "$target"
+    fi
+  elif [[ -n "$app" ]]; then
+    local winpath
+    winpath="$(to_winpath "$target")"
+    if $flag_wait; then
+      cmd.exe /C start "" /WAIT "$app" "$winpath" 2>/dev/null
+    else
+      cmd.exe /C start "" "$app" "$winpath" 2>/dev/null
+    fi
+  elif [[ -d "$target" ]]; then
+    local winpath
+    winpath="$(to_winpath "$target")"
+    run_explorer "$winpath"
+  else
+    local winpath
+    winpath="$(to_winpath "$target")"
+    if $flag_wait; then
+      cmd.exe /C start "" /WAIT "$winpath" 2>/dev/null
+    else
+      cmd.exe /C start "" "$winpath" 2>/dev/null
+    fi
+  fi
+}
+
+
+# PATH resolves "xdg-open" to the shim itself, so walking it by hand and
+# skipping anything that leads back here is the only way to reach the one we
+# shadow. Without this, delegating would simply re-enter this script forever.
+find_real_xdg_open() {
+  local self dir candidate
+  self="$(realpath "$0")"
+  local IFS=:
+  for dir in $PATH; do
+    candidate="$dir/xdg-open"
+    [[ -x "$candidate" ]] || continue
+    [[ "$(realpath "$candidate" 2>/dev/null)" == "$self" ]] && continue
+    printf '%s\n' "$candidate"
+    return 0
+  done
+  return 1
+}
+
+# Invoked through the symlink named xdg-open. xdg-open's contract is narrower
+# than ours -- exactly one target, and exit codes callers branch on -- so
+# honouring it matters more than reusing our own argument handling.
+#
+# We never fall back to the system xdg-open on failure, because Windows gives
+# us no failure to detect: `start` reports success for a scheme nothing has
+# registered. WINOPEN_XDG=0 is the manual version of that fallback, for getting
+# the old behaviour back without uninstalling anything.
+xdg_open_main() {
+  case "${1:-}" in
+    --help|--manual) xdg_usage; exit 0 ;;
+    --version)       echo "xdg-open (winopen $VERSION)"; exit 0 ;;
+  esac
+
+  [[ $# -eq 1 ]] || {
+    echo "xdg-open: expected exactly one file or URL" >&2
+    exit 1
+  }
+
+  local target="$1"
+
+  if [[ "${WINOPEN_XDG:-1}" == "0" ]]; then
+    local real
+    real="$(find_real_xdg_open)" || {
+      echo "xdg-open: WINOPEN_XDG=0 and no other xdg-open on PATH" >&2
+      exit 3
+    }
+    exec "$real" "$target"
+  fi
+
+  # The spec numbers a missing file 2; our own die() would call it 1.
+  if ! is_url "$target" && [[ ! -e "$target" ]]; then
+    echo "xdg-open: no such file or directory: $target" >&2
+    exit 2
+  fi
+
+  open_target "$target" false
+  exit 0
+}
+
+# The shim is a symlink rather than a generated wrapper: one file stays one
+# file, so --update and the release tarball have nothing extra to track, and
+# the shim can never drift out of step with the tool it points at.
+xdg_dest() {
+  echo "${PREFIX:-/usr/local}/bin/xdg-open"
+}
+
+# Root is asked for the moment the prefix is not the user's to write, which is
+# the default on /usr/local. Naming the exact commands before the password
+# prompt rather than after is the difference between a considered yes and a
+# reflex one.
+announce_sudo() {
+  local bindir="$1"; shift
+  echo "$bindir is not writable by you, so this needs root."
+  echo "sudo will run:"
+  local cmd
+  for cmd in "$@"; do
+    echo "    $cmd"
+  done
+  echo
+}
+
+install_xdg() {
+  local dest self bindir sudo_cmd backup
+  dest="$(xdg_dest)"
+  bindir="$(dirname "$dest")"
+  self="$(realpath "$0")"
+
+  [[ -d "$bindir" ]] || die "no such directory: $bindir (set PREFIX)"
+
+  # Everything is decided before anything is done, so the sudo notice can list
+  # the real commands rather than a guess at them.
+  backup=""
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    if [[ "$(realpath "$dest" 2>/dev/null)" == "$self" ]]; then
+      echo "Already installed: $dest -> $self"
+      return 0
+    fi
+    # Only ever a file at our own target path -- a packaged /usr/bin/xdg-open is
+    # shadowed, not touched, so there is nothing of dpkg's to back up.
+    backup="$dest.winopen-backup"
+    [[ -e "$backup" ]] && die "refusing to overwrite an existing backup: $backup"
+  fi
+
+  sudo_cmd=""
+  if [[ ! -w "$bindir" ]]; then
+    sudo_cmd="sudo"
+    if [[ -n "$backup" ]]; then
+      announce_sudo "$bindir" "mv $dest $backup" "ln -s $self $dest"
+    else
+      announce_sudo "$bindir" "ln -s $self $dest"
+    fi
+  fi
+
+  if [[ -n "$backup" ]]; then
+    echo "Backing up $dest -> $backup"
+    $sudo_cmd mv "$dest" "$backup"
+  fi
+
+  $sudo_cmd ln -s "$self" "$dest"
+  echo "Installed $dest -> $self"
+  echo
+  echo "Programs calling xdg-open now open things through Windows."
+  echo "To route \$BROWSER the same way, add to your shell config:"
+  echo "    export BROWSER=$dest"
+  echo
+  echo "Undo with: open --uninstall-xdg"
+  echo "Bypass for one command with: WINOPEN_XDG=0 xdg-open <target>"
+}
+
+uninstall_xdg() {
+  local dest self bindir sudo_cmd backup
+  dest="$(xdg_dest)"
+  bindir="$(dirname "$dest")"
+  self="$(realpath "$0")"
+
+  [[ -e "$dest" || -L "$dest" ]] || die "not installed: $dest"
+  [[ "$(realpath "$dest" 2>/dev/null)" == "$self" ]] ||
+    die "$dest was not installed by winopen; leaving it alone"
+
+  backup="$dest.winopen-backup"
+  [[ -e "$backup" ]] || backup=""
+
+  sudo_cmd=""
+  if [[ ! -w "$bindir" ]]; then
+    sudo_cmd="sudo"
+    if [[ -n "$backup" ]]; then
+      announce_sudo "$bindir" "rm -f $dest" "mv $backup $dest"
+    else
+      announce_sudo "$bindir" "rm -f $dest"
+    fi
+  fi
+
+  $sudo_cmd rm -f "$dest"
+  echo "Removed $dest"
+
+  if [[ -n "$backup" ]]; then
+    $sudo_cmd mv "$backup" "$dest"
+    echo "Restored $dest from $backup"
+  fi
+}
+
 
 # --- Argument parsing ---
 
@@ -132,12 +356,21 @@ add_target() {
   targets_forced_url+=("${2:-false}")
 }
 
+# Called through the shim, not as `open`. Checked after the flag defaults above
+# are set, since open_target reads them, and before our own parser, whose
+# argument grammar is not xdg-open's.
+if [[ "$(basename -- "$0")" == "xdg-open" ]]; then
+  xdg_open_main "$@"
+fi
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)    usage; exit 0 ;;
     -V|--version) version; exit 0 ;;
     --check-update) check_update; exit 0 ;;
     --update)     self_update; exit 0 ;;
+    --install-xdg)   install_xdg; exit 0 ;;
+    --uninstall-xdg) uninstall_xdg; exit 0 ;;
     -D)           flag_enclosing=true; shift ;;
     -R)           flag_reveal=true; shift ;;
     -e|-t)        flag_editor=true; shift ;;
@@ -185,53 +418,6 @@ if [[ ${#targets[@]} -eq 0 ]]; then
 fi
 
 # --- Dispatch ---
-
-open_target() {
-  local target="$1"
-  local forced_url="$2"
-
-  if $forced_url || is_url "$target"; then
-    cmd.exe /C start "" "$target" 2>/dev/null
-  elif $flag_enclosing; then
-    local parent winpath
-    parent="$(dirname "$target")"
-    winpath="$(to_winpath "$parent")"
-    run_explorer "$winpath"
-  elif $flag_reveal; then
-    local winpath
-    winpath="$(to_winpath "$target")"
-    run_explorer /select,"$winpath"
-  elif $flag_editor; then
-    local editor="${WINOPEN_EDITOR:-notepad.exe}"
-    local editor_path
-    editor_path="$(command -v "$editor" 2>/dev/null)" || die "editor not found: $editor"
-    if [[ "$editor_path" == /mnt/* ]]; then
-      "$editor" "$(to_winpath "$target")"
-    else
-      "$editor" "$target"
-    fi
-  elif [[ -n "$app" ]]; then
-    local winpath
-    winpath="$(to_winpath "$target")"
-    if $flag_wait; then
-      cmd.exe /C start "" /WAIT "$app" "$winpath" 2>/dev/null
-    else
-      cmd.exe /C start "" "$app" "$winpath" 2>/dev/null
-    fi
-  elif [[ -d "$target" ]]; then
-    local winpath
-    winpath="$(to_winpath "$target")"
-    run_explorer "$winpath"
-  else
-    local winpath
-    winpath="$(to_winpath "$target")"
-    if $flag_wait; then
-      cmd.exe /C start "" /WAIT "$winpath" 2>/dev/null
-    else
-      cmd.exe /C start "" "$winpath" 2>/dev/null
-    fi
-  fi
-}
 
 for i in "${!targets[@]}"; do
   open_target "${targets[$i]}" "${targets_forced_url[$i]}"

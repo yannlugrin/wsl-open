@@ -88,6 +88,8 @@ open file1.txt file2.txt          # Open multiple files
 | `-V`, `--version` | Show version |
 | `--check-update` | Check if a newer version is available |
 | `--update` | Update to the latest version |
+| `--install-xdg` | Install an `xdg-open` shim so other programs route through winopen |
+| `--uninstall-xdg` | Remove the shim and restore any backup |
 
 ### URLs
 
@@ -106,6 +108,81 @@ tell you when a URL had nowhere to go.
 | Variable | Description |
 |----------|-------------|
 | `WINOPEN_EDITOR` | Override the default text editor (default: `notepad.exe`) |
+| `WINOPEN_XDG` | Set to `0` to bypass the `xdg-open` shim for one command |
+
+## xdg-open integration
+
+By itself, `open` only helps when you type it. Links opened by other programs —
+editors, CLI tools, anything calling `xdg-open` — go elsewhere. Installing the
+shim routes those through winopen too:
+
+```bash
+open --install-xdg      # into $PREFIX/bin, default /usr/local/bin
+open --uninstall-xdg    # remove it, restoring anything it replaced
+```
+
+Installing winopen does not install the shim. It is a separate, explicit step,
+and a separately reversible one.
+
+`/usr/local/bin` is not normally yours to write, so this needs `sudo`. Before
+asking for your password it tells you why, and names the exact commands root
+will run:
+
+```
+/usr/local/bin is not writable by you, so this needs root.
+sudo will run:
+    ln -s /usr/local/bin/open /usr/local/bin/xdg-open
+```
+
+### It shadows, it does not replace
+
+`xdg-utils` ships `/usr/bin/xdg-open`. `/usr/local/bin` comes first on `PATH`,
+so the shim takes precedence while the packaged file is left untouched —
+package upgrades do not fight it, and removing the shim hands control straight
+back. Only a file already sitting at the shim's own path is ever moved, and
+then it is backed up alongside and restored on uninstall.
+
+Install to a prefix on your `PATH` with `PREFIX=~/.local open --install-xdg` if
+you prefer no `sudo` — but note that `~/.local/bin` is typically only on `PATH`
+in interactive shells, so programs started by services, or launched into WSL
+from Windows, will not see it. That is the case the shim exists for.
+
+### It never falls back
+
+The shim always opens through Windows. It does not try Windows and fall back to
+the `xdg-open` it shadows, because Windows gives it no failure to detect —
+`start` reports success even for a scheme nothing has registered.
+
+To bypass it deliberately, for one command or one program's environment:
+
+```bash
+WINOPEN_XDG=0 xdg-open ~/notes.md    # uses the shadowed xdg-open instead
+```
+
+### Exit codes
+
+The shim follows `xdg-open`'s contract rather than `open`'s: exactly one target,
+and these codes.
+
+| Code | Meaning |
+|------|---------|
+| 0 | Handed to Windows |
+| 1 | Error in command line syntax |
+| 2 | The file did not exist |
+| 3 | `WINOPEN_XDG=0` and no other `xdg-open` to delegate to |
+
+`xdg-open` also defines 4, "the action failed". winopen never returns it,
+because Windows does not report whether the action succeeded. A 0 means the
+target was handed over, not that something opened.
+
+### BROWSER
+
+`open` cannot set environment variables in your shell. To route `$BROWSER`
+through winopen as well, add this yourself:
+
+```bash
+export BROWSER=/usr/local/bin/xdg-open
+```
 
 ## Requirements
 
