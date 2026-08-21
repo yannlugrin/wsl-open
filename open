@@ -11,12 +11,14 @@ die() {
 
 usage() {
   cat <<'EOF'
-Usage: open [-a app] [-DeRtWf] [target ...]
+Usage: open [-a app] [-u url] [-DeRtWf] [target ...]
 
 Open files, directories, and URLs from WSL using Windows applications.
 
 Flags:
   -a <app>     Open with a specific Windows application
+  -u <url>     Open a URL with whatever application claims its scheme,
+               even if a file of that name exists
   -D           Open the enclosing folder in Explorer
   -R           Reveal in Explorer (highlight the file)
   -e           Open in text editor (notepad.exe or $WINOPEN_EDITOR)
@@ -86,8 +88,15 @@ version() {
   echo "open $VERSION (WSL)"
 }
 
+# Windows resolves any registered scheme through ShellExecute, and there are far
+# more of them than the three this used to list -- vscode:, ms-settings:, file:
+# and whatever else is installed. So recognise the shape of a scheme (RFC 3986)
+# rather than an allowlist, and let Windows decide what it can handle.
+#
+# An existing path wins the tiebreak: a file genuinely named "foo:bar" is a
+# file. -u overrides that, which is the flag's entire purpose.
 is_url() {
-  [[ "$1" =~ ^https?:// || "$1" =~ ^mailto: || "$1" =~ ^ftp:// ]]
+  [[ "$1" =~ ^[a-zA-Z][a-zA-Z0-9+.-]*: ]] && [[ ! -e "$1" ]]
 }
 
 to_winpath() {
@@ -112,7 +121,16 @@ flag_editor=false
 flag_wait=false
 flag_stdin=false
 app=""
+
+# Two arrays with matching indices. -u marks one target as a URL and says
+# nothing about the others, so "forced" cannot live in a single flag variable.
 targets=()
+targets_forced_url=()
+
+add_target() {
+  targets+=("$1")
+  targets_forced_url+=("${2:-false}")
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -128,9 +146,15 @@ while [[ $# -gt 0 ]]; do
     -a)
       [[ -n "${2:-}" ]] || die "-a requires an application name"
       app="$2"; shift 2 ;;
-    --)           shift; targets+=("$@"); break ;;
+    -u)
+      [[ -n "${2:-}" ]] || die "-u requires a URL"
+      add_target "$2" true; shift 2 ;;
+    --)
+      shift
+      for arg in "$@"; do add_target "$arg"; done
+      break ;;
     -*)           die "unknown option: $1" ;;
-    *)            targets+=("$1"); shift ;;
+    *)            add_target "$1"; shift ;;
   esac
 done
 
@@ -151,7 +175,7 @@ trap cleanup EXIT
 if $flag_stdin; then
   tmpfile="$(mktemp /tmp/winopen-XXXXXX)"
   cat > "$tmpfile"
-  targets+=("$tmpfile")
+  add_target "$tmpfile"
 fi
 
 # --- Validate targets ---
@@ -164,8 +188,9 @@ fi
 
 open_target() {
   local target="$1"
+  local forced_url="$2"
 
-  if is_url "$target"; then
+  if $forced_url || is_url "$target"; then
     cmd.exe /C start "" "$target" 2>/dev/null
   elif $flag_enclosing; then
     local parent winpath
@@ -208,6 +233,6 @@ open_target() {
   fi
 }
 
-for target in "${targets[@]}"; do
-  open_target "$target"
+for i in "${!targets[@]}"; do
+  open_target "${targets[$i]}" "${targets_forced_url[$i]}"
 done

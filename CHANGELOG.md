@@ -7,11 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`-u <url>`**, matching macOS `open(1)`: open a URL with whatever application
+  claims its scheme, even when a file of that name exists.
+
 ### Fixed
 
 - **`open` exited 1 on every successful call.** The `EXIT` trap ended on a
   failed test whenever there was no temp file to clean up, and the trap's status
   becomes the script's, so `open file && ...` never ran.
+- **Every URL scheme but `http`, `https`, `mailto` and `ftp` was rejected.**
+  `vscode:`, `slack:`, `file:` and the rest were treated as file paths and died
+  with "no such file or directory". Schemes are now recognised by shape, and
+  Windows decides what it can open. A side effect: Windows-style paths such as
+  `C:\Windows` now open instead of failing.
 - **Only the first directory of a multi-target call was opened.** `explorer.exe`
   returns 1 whether it succeeded or not; under `set -euo pipefail` that ended the
   run after the first target.

@@ -58,6 +58,8 @@ open [flags] [target ...]
 
 ```bash
 open https://example.com          # Open URL in default browser
+open vscode://file/tmp/x          # Any scheme Windows has registered
+open -u mailto:me@example.com     # Force URL, even if a file of that name exists
 open .                            # Open current directory in Explorer
 open ~/Documents/report.pdf       # Open file with default Windows app
 open -D ~/Documents/report.pdf    # Open enclosing folder in Explorer
@@ -75,6 +77,7 @@ open file1.txt file2.txt          # Open multiple files
 |------|-------------|
 | (none) | Open target with default Windows app |
 | `-a <app>` | Open with a specific Windows application |
+| `-u <url>` | Open a URL with whatever application claims its scheme, even if a file of that name exists |
 | `-D` | Open the enclosing folder in Explorer |
 | `-R` | Reveal in Explorer (highlight the file) |
 | `-e` | Open in text editor (notepad.exe by default) |
@@ -85,6 +88,18 @@ open file1.txt file2.txt          # Open multiple files
 | `-V`, `--version` | Show version |
 | `--check-update` | Check if a newer version is available |
 | `--update` | Update to the latest version |
+
+### URLs
+
+Any scheme Windows has registered is handed to it as-is — `https:`, `mailto:`,
+`vscode:`, `ms-settings:`, `file:`, whatever else is installed. There is no
+allowlist.
+
+An argument that looks like a URL but names an existing file is treated as the
+file. `-u` says the opposite: open it as a URL regardless.
+
+Windows reports success for a scheme nothing has registered, so `open` cannot
+tell you when a URL had nowhere to go.
 
 ### Environment Variables
 
