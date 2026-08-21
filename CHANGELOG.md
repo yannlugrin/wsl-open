@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`-f` opened the wrong application, and deleted the temp file before it
+  could be read.** The temp file had no extension, so Windows had no
+  association for it, and the `EXIT` trap removed it while `start` was still
+  handing it over — the file was reliably gone a second later, so the README's
+  own `echo "hello" | open -f` example did not work. It now writes a `.txt`
+  file, opens it in the text editor as `open(1)` specifies, and leaves it for
+  the system to reap.
 - **`open` exited 1 on every successful call.** The `EXIT` trap ended on a
   failed test whenever there was no temp file to clean up, and the trap's status
   becomes the script's, so `open file && ...` never ran.

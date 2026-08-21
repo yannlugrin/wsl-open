@@ -24,7 +24,7 @@ Flags:
   -e           Open in notepad.exe
   -t           Open in the default text editor ($WINOPEN_EDITOR, else notepad.exe)
   -W           Wait for the application to exit
-  -f           Read stdin into a temp file, then open it
+  -f           Read stdin into a temp file, then open it in the text editor
   -h, --help   Show this help
   -V, --version  Show version
   --check-update  Check if a newer version is available
@@ -417,21 +417,23 @@ done
 
 # --- Stdin mode ---
 
-tmpfile=""
-
-# Runs as the EXIT trap, so whatever this returns becomes the script's exit
-# status. Without the explicit success at the end, the common case -- no temp
-# file to remove -- leaves the failed test as the last status and every
-# successful run reports failure.
-cleanup() {
-  [[ -n "$tmpfile" && -f "$tmpfile" ]] && rm -f "$tmpfile"
-  return 0
-}
-trap cleanup EXIT
-
 if $flag_stdin; then
-  tmpfile="$(mktemp /tmp/winopen-XXXXXX)"
+  # The suffix matters: an extensionless file has no association, so handing it
+  # to the default handler asks Windows to open something it knows nothing
+  # about.
+  tmpfile="$(mktemp --suffix=.txt /tmp/winopen-XXXXXX)"
   cat > "$tmpfile"
+
+  # open(1) defines -f as reading stdin and opening the result "in the default
+  # text editor", so it implies -t -- unless an editor flag was given, in which
+  # case that one was asked for explicitly.
+  [[ -n "$editor_mode" ]] || editor_mode="default"
+
+  # Deliberately not deleted. `start` returns as soon as it has handed the file
+  # over, long before the application has read it, so removing it here removed
+  # it out from under the app -- the file was reliably gone a second later.
+  # Leaving it for the OS to reap is what macOS does, and the only option that
+  # does not either race the application or block until it exits.
   add_target "$tmpfile"
 fi
 

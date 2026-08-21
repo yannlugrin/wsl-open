@@ -68,7 +68,7 @@ open -e ~/.bashrc                 # Open in notepad.exe
 open -t ~/.bashrc                 # Open in the default text editor
 open -a notepad.exe ~/.bashrc     # Open with specific Windows app
 open -W somefile.txt              # Wait for the app to close
-echo "hello" | open -f            # Read from stdin, open as temp file
+echo "hello" | open -f            # Read stdin, open it in the text editor
 open file1.txt file2.txt          # Open multiple files
 ```
 
@@ -84,7 +84,7 @@ open file1.txt file2.txt          # Open multiple files
 | `-e` | Open in `notepad.exe` |
 | `-t` | Open in the default text editor (`$WINOPEN_EDITOR`, else `notepad.exe`) |
 | `-W` | Wait for the application to exit before returning |
-| `-f` | Read from stdin, write to a temp file, then open it |
+| `-f` | Read stdin into a temp file, then open it in the text editor (as `-t`) |
 | `-h`, `--help` | Show help |
 | `-V`, `--version` | Show version |
 | `--check-update` | Check if a newer version is available |
@@ -103,6 +103,15 @@ file. `-u` says the opposite: open it as a URL regardless.
 
 Windows reports success for a scheme nothing has registered, so `open` cannot
 tell you when a URL had nowhere to go.
+
+### Reading from stdin
+
+`-f` writes standard input to a temporary `.txt` file and opens it in the text
+editor, the same one `-t` resolves.
+
+The temporary file is **not** deleted. `start` returns as soon as Windows has
+been handed the file, long before the application has read it, so deleting it
+would race whatever is opening it. It is left in `/tmp` for the system to reap.
 
 ### Environment Variables
 
