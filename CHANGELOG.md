@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`-n`**, matching macOS `open(1)`: open a new instance rather than letting a
+  running one take the target. Windows has no general switch for this, so it
+  uses the application's own flag and knows the common browsers; anything else
+  is rejected rather than quietly opened in the running instance. With no `-a`
+  the default application is resolved with `AssocQueryString`, which needs
+  `powershell.exe`.
+
 - **`--args`**, matching macOS `open(1)`: everything after it is passed to the
   launched application instead of being opened.
 

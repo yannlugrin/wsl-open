@@ -87,6 +87,7 @@ open -- -weird-name.txt           # A target whose name starts with a dash
 | `-e` | Open in `notepad.exe` |
 | `-t` | Open in the default text editor (`$WINOPEN_EDITOR`, else `notepad.exe`) |
 | `-W` | Wait for the application to exit before returning |
+| `-n` | Open a new instance, rather than reusing a running one |
 | `-f` | Read stdin into a temp file, then open it in the text editor (as `-t`) |
 | `--args <...>` | Pass all remaining arguments to the launched application |
 | `--` | Treat all remaining arguments as targets |
@@ -96,6 +97,33 @@ open -- -weird-name.txt           # A target whose name starts with a dash
 | `--update` | Update to the latest version |
 | `--install-xdg` | Install an `xdg-open` shim so other programs route through winopen |
 | `--uninstall-xdg` | Remove the shim and restore any backup |
+
+### New instances
+
+`-n` forces a new window rather than letting a running instance take the target:
+
+```bash
+open -n https://example.com          # a new browser window
+open -n -a chrome.exe file.html
+```
+
+Windows has no general "new instance" switch — `ShellExecute` asks the
+application, and most single-instance themselves, which is exactly why a
+browser handed a URL puts the tab in whichever window was last active. What
+works is the application's own flag, so `-n` only knows the browsers it has a
+flag for: Chrome, Edge, Brave, Vivaldi, Opera and Thorium take `--new-window`,
+Firefox, LibreWolf and Waterfox take `-new-window`.
+
+Anything else is **rejected**, not silently opened in the running instance:
+
+```
+$ open -n -a notepad.exe file.txt
+open: -n does not know how to open a new instance of notepad.exe
+```
+
+With no `-a`, the application has to be resolved before it can be asked for a
+new window, which needs `powershell.exe`. Without it, `-n` says so rather than
+guessing.
 
 ### Passing arguments, and targets that look like flags
 
