@@ -126,16 +126,23 @@ works is the application's own flag, so `-n` only knows the browsers it has a
 flag for: Chrome, Edge, Brave, Vivaldi, Opera and Thorium take `--new-window`,
 Firefox, LibreWolf and Waterfox take `-new-window`.
 
-Anything else is **rejected**, not silently opened in the running instance:
+For anything else, the file is still opened — it just says that the guarantee
+was not available:
 
 ```
 $ open -n -a notepad.exe file.txt
-open: -n does not know how to open a new instance of notepad.exe
+open: -n: no new-instance flag known for notepad.exe; opening normally, which may reuse a running window
 ```
 
+It opens anyway on purpose. Whether an unknown application reuses a window or
+starts a fresh one is its own business, and many start a fresh one regardless —
+so refusing would cost you the whole operation over a preference that may well
+have been satisfied. A flag that *contradicts* the target is different: `-R` on
+a URL is refused outright, because there is no enclosing folder to reveal.
+
 With no `-a`, the application has to be resolved before it can be asked for a
-new window, which needs `powershell.exe`. Without it, `-n` says so rather than
-guessing.
+new window, which needs `powershell.exe`. Without it, `-n` says so and opens
+normally.
 
 ### Passing arguments, and targets that look like flags
 

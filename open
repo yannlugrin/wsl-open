@@ -9,6 +9,16 @@ die() {
   exit 1
 }
 
+# For what could not be honoured but does not stop the target being opened.
+# Refusing is right when a flag contradicts the target -- a URL has no
+# enclosing folder for -D to show. It is wrong when the flag is a guarantee we
+# cannot offer, as -n is for an application whose flag we do not know: the open
+# itself is still valid, and denying it outright costs the caller everything
+# over a preference that might have been satisfied anyway.
+warn() {
+  echo "open: $*" >&2
+}
+
 usage() {
   cat <<'EOF'
 Usage: open [-a app] [-u url] [-DeRtWfn] [target ...] [--args arg ...]
@@ -142,9 +152,11 @@ launch_app() {
 
   if $flag_new; then
     local nflag
-    nflag="$(new_instance_flag "$app")" ||
-      die "-n does not know how to open a new instance of ${app##*/}"
-    extra+=("$nflag")
+    if nflag="$(new_instance_flag "$app")"; then
+      extra+=("$nflag")
+    else
+      warn "-n: no new-instance flag known for ${app##*/}; opening normally, which may reuse a running window"
+    fi
   fi
   if [[ ${#app_args[@]} -gt 0 ]]; then
     extra+=("${app_args[@]}")
@@ -408,24 +420,24 @@ open_target() {
   if $flag_new; then
     # With no -a, the application is whatever Windows would have picked, so it
     # has to be resolved before it can be asked for a new window.
-    local resolved="$opener" key
+    local resolved="$opener" key nflag
     if [[ -z "$resolved" ]]; then
-      key="$(assoc_key_for "$target" "$url_target")" ||
-        die "-n needs to know the application, and $target has no extension to look one up by"
-      resolved="$(windows_default_app "$key")"
-      [[ -n "$resolved" ]] ||
-        die "-n could not resolve the default application for $key (is powershell.exe available?)"
+      if key="$(assoc_key_for "$target" "$url_target")"; then
+        resolved="$(windows_default_app "$key")"
+      fi
     fi
 
-    local nflag
-    nflag="$(new_instance_flag "$resolved")" ||
-      die "-n does not know how to open a new instance of ${resolved##*/}"
-    opener_flags+=("$nflag")
-
-    # Naming the application is the point: handing the URL to the default
-    # handler would let the running instance take it, which is what -n asks us
-    # not to do.
-    opener="$resolved"
+    if [[ -z "$resolved" ]]; then
+      warn "-n: could not work out which application opens $target; opening normally"
+    elif nflag="$(new_instance_flag "$resolved")"; then
+      opener_flags+=("$nflag")
+      # Naming the application is the point: handing the target to the default
+      # handler would let the running instance take it, which is what -n asks
+      # us not to do.
+      opener="$resolved"
+    else
+      warn "-n: no new-instance flag known for ${resolved##*/}; opening normally, which may reuse a running window"
+    fi
   fi
 
   start_open "$opener" "$addressed"
