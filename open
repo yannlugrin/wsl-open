@@ -129,6 +129,16 @@ run_explorer() {
   explorer.exe "$@" 2>/dev/null || true
 }
 
+# -a with nothing to open. `start` takes an application on its own, so this is
+# the same call as the -a branch of open_target minus the document.
+launch_app() {
+  if $flag_wait; then
+    cmd.exe /C start "" /WAIT "$app" 2>/dev/null
+  else
+    cmd.exe /C start "" "$app" 2>/dev/null
+  fi
+}
+
 # notepad.exe is the TextEdit analogue, so -e is pinned to it and only -t takes
 # the override.
 #
@@ -440,7 +450,20 @@ fi
 # --- Validate targets ---
 
 if [[ ${#targets[@]} -eq 0 ]]; then
-  die "no target specified (use -h for help)"
+  # `open -a Foo` with no file launches the application with no document, so an
+  # empty target list is only a mistake when there is no application to launch
+  # either.
+  if [[ -n "$app" ]]; then
+    launch_app
+    exit 0
+  fi
+
+  # A bare `open` is a mistake, not a request, so the usage goes to stderr and
+  # the status says so -- unlike -h, where the user asked and gets stdout and 0.
+  # Deliberately not defaulting to the current directory: `open .` is the
+  # documented idiom, and requiring the dot is what macOS and `code` both do.
+  usage >&2
+  exit 1
 fi
 
 # --- Dispatch ---

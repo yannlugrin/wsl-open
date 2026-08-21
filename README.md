@@ -70,6 +70,7 @@ open -a notepad.exe ~/.bashrc     # Open with specific Windows app
 open -W somefile.txt              # Wait for the app to close
 echo "hello" | open -f            # Read stdin, open it in the text editor
 open file1.txt file2.txt          # Open multiple files
+open -a notepad.exe               # Launch an app with no document
 ```
 
 ### Flags
@@ -91,6 +92,15 @@ open file1.txt file2.txt          # Open multiple files
 | `--update` | Update to the latest version |
 | `--install-xdg` | Install an `xdg-open` shim so other programs route through winopen |
 | `--uninstall-xdg` | Remove the shim and restore any backup |
+
+### No target
+
+`open` with no arguments prints its usage to stderr and exits 1. It does not
+default to the current directory — `open .` is the documented idiom, the same
+as macOS and `code`.
+
+`open -a <app>` with no file is not a mistake: it launches the application with
+no document, as macOS does.
 
 ### URLs
 

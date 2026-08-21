@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`open -a <app>` with no file now launches the application**, with no
+  document, as macOS `open(1)` does. It used to be rejected as "no target
+  specified".
+- **A bare `open` prints its usage** to stderr and exits 1, rather than a
+  one-line error. It still does not default to the current directory: `open .`
+  is the documented idiom. `-h` is unchanged — usage on stdout, exit 0.
+
 - **`-e` and `-t` are no longer the same flag.** Matching macOS `open(1)`, where
   `-e` names one application and `-t` asks the system which one handles text:
   `-e` is now always `notepad.exe`, and only `-t` honours `$WINOPEN_EDITOR`.
