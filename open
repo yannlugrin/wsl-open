@@ -174,24 +174,6 @@ launch_app() {
   "${cmd[@]}" 2>/dev/null
 }
 
-# lpParameters is one command-line string, so anything with a space has to carry
-# its own quotes. Flags are left bare: some applications match them literally.
-quote_param() {
-  case "$1" in
-    *[[:space:]]*) printf '"%s"' "$1" ;;
-    *)             printf '%s' "$1" ;;
-  esac
-}
-
-# The one command-line string ShellExecuteEx wants, built from separate words.
-join_params() {
-  local out="" a
-  for a in "$@"; do
-    out+="${out:+ }$(quote_param "$a")"
-  done
-  printf '%s' "$out"
-}
-
 # The paths that never reach the -n block below -- Explorer, a Linux editor, the
 # class-based -t open -- have no flag to pass and no application to pass it to.
 # Silence there would break the contract every other -n case keeps.
@@ -213,16 +195,15 @@ warn_no_new_instance() {
 # SEE_MASK_NOASYNC matters: without it the launch can be abandoned when the
 # calling process exits, and this one exits immediately.
 shell_execute() {
-  local file="$1" params="$2" class="$3" show="$4"
+  local file="$1" class="$2" show="$3"
 
   command -v powershell.exe >/dev/null 2>&1 || return 1
 
   WINOPEN_SE_FILE="$file" \
-  WINOPEN_SE_PARAMS="$params" \
   WINOPEN_SE_CLASS="$class" \
   WINOPEN_SE_SHOW="$show" \
   WINOPEN_SE_WAIT="$($flag_wait && echo 1 || echo 0)" \
-  WSLENV="${WSLENV:+$WSLENV:}WINOPEN_SE_FILE:WINOPEN_SE_PARAMS:WINOPEN_SE_CLASS:WINOPEN_SE_SHOW:WINOPEN_SE_WAIT" \
+  WSLENV="${WSLENV:+$WSLENV:}WINOPEN_SE_FILE:WINOPEN_SE_CLASS:WINOPEN_SE_SHOW:WINOPEN_SE_WAIT" \
   powershell.exe -NoProfile -Command '
 Add-Type -TypeDefinition @"
 using System;using System.Runtime.InteropServices;
@@ -248,7 +229,6 @@ $i.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($i)
 $i.fMask  = 0x100
 $i.lpFile = $env:WINOPEN_SE_FILE
 $i.nShow  = [int]$env:WINOPEN_SE_SHOW
-if ($env:WINOPEN_SE_PARAMS) { $i.lpParameters = $env:WINOPEN_SE_PARAMS }
 if ($env:WINOPEN_SE_CLASS)  { $i.fMask = $i.fMask -bor 0x1; $i.lpClass = $env:WINOPEN_SE_CLASS }
 if ($env:WINOPEN_SE_WAIT -eq "1") { $i.fMask = $i.fMask -bor 0x40 }
 if (-not [WinShell]::ShellExecuteExW([ref]$i)) { exit 1 }
@@ -415,7 +395,13 @@ open_target() {
     # that `ftype` cannot name and whose path is unreadable from WSL. Falls
     # through to resolve_editor when there is no powershell.exe to ask with.
     if [[ "$editor_mode" == "default" && -z "${WINOPEN_EDITOR:-}" ]]; then
-      if shell_execute "$addressed" "$(join_params ${app_args[@]+"${app_args[@]}"})" ".txt" 1; then
+      # lpParameters has to be NULL when lpFile is a document: with it set,
+      # ShellExecuteEx reports success and opens nothing at all. So --args
+      # cannot travel this path -- losing them beats losing the open.
+      if [[ ${#app_args[@]} -gt 0 ]]; then
+        warn "--args: the .txt handler is asked to open the document itself, which takes no arguments; ignoring them"
+      fi
+      if shell_execute "$addressed" ".txt" 1; then
         warn_no_new_instance "the .txt handler"
         return
       fi
