@@ -174,34 +174,6 @@ launch_app() {
   "${cmd[@]}" 2>/dev/null
 }
 
-# notepad.exe is the TextEdit analogue, so -e is pinned to it and only -t takes
-# the override.
-#
-# -t should ask Windows what it has registered for .txt. On Windows 11 that is
-# a Store app, and every cheap way of reaching it is a dead end: `ftype` returns
-# nothing for the file type `assoc` reports, the UserChoice key holds an AppX id
-# with no command line, and the resolved path under WindowsApps is unreadable
-# from WSL -- launching it by path hangs. Doing it properly needs ShellExecuteEx
-# with SEE_MASK_CLASSNAME, which arrives with the PowerShell work in #10. Until
-# then -t lands on the same notepad.exe, and #12 records the gap.
-# Windows has no general "new instance" switch. ShellExecute asks the
-# application, and most of them single-instance themselves -- which is exactly
-# why a browser handed a URL puts a tab in the window that was last active. What
-# does work is the application's own flag, so -n is only as good as this table.
-# Anything not in it is rejected rather than quietly opened in the running
-# instance, which is what ignoring -n would amount to.
-# ShellExecuteEx, for the two things `start` cannot express: opening without
-# taking the foreground (-g), and opening a file with a class other than its own
-# extension (-t, which wants whatever handles .txt, not whatever handles this
-# file).
-#
-# Values travel as environment variables rather than inside the PowerShell
-# source, so a target containing quotes, spaces or ampersands needs no escaping
-# on the way through. WSLENV is what carries them across the boundary, and it is
-# appended to rather than replaced -- Windows Terminal already sets it.
-#
-# SEE_MASK_NOASYNC matters: without it the launch can be abandoned when the
-# calling process exits, and this one exits immediately.
 # lpParameters is one command-line string, so anything with a space has to carry
 # its own quotes. Flags are left bare: some applications match them literally.
 quote_param() {
@@ -211,6 +183,35 @@ quote_param() {
   esac
 }
 
+# The one command-line string ShellExecuteEx wants, built from separate words.
+join_params() {
+  local out="" a
+  for a in "$@"; do
+    out+="${out:+ }$(quote_param "$a")"
+  done
+  printf '%s' "$out"
+}
+
+# The paths that never reach the -n block below -- Explorer, a Linux editor, the
+# class-based -t open -- have no flag to pass and no application to pass it to.
+# Silence there would break the contract every other -n case keeps.
+warn_no_new_instance() {
+  if $flag_new; then
+    warn "-n: cannot ask $1 for a new window; opening normally"
+  fi
+}
+
+# ShellExecuteEx, for the one thing `start` cannot express: opening a file with
+# a class other than its own extension, which is what -t needs -- whatever
+# handles .txt, not whatever handles this file.
+#
+# Values travel as environment variables rather than inside the PowerShell
+# source, so a target containing quotes, spaces or ampersands needs no escaping
+# on the way through. WSLENV is what carries them across the boundary, and it is
+# appended to rather than replaced -- Windows Terminal already sets it.
+#
+# SEE_MASK_NOASYNC matters: without it the launch can be abandoned when the
+# calling process exits, and this one exits immediately.
 shell_execute() {
   local file="$1" params="$2" class="$3" show="$4"
 
@@ -257,6 +258,11 @@ if ($env:WINOPEN_SE_WAIT -eq "1" -and $i.hProcess -ne [IntPtr]::Zero) {
 exit 0' >/dev/null 2>&1
 }
 
+# Windows has no general "new instance" switch. ShellExecute asks the
+# application, and most of them single-instance themselves -- which is exactly
+# why a browser handed a URL puts a tab in the window that was last active. What
+# does work is the application's own flag, so -n is only as good as this table.
+# Anything not in it is opened normally, with a warning: see warn().
 new_instance_flag() {
   # AssocQueryString answers with a Windows path, so the separator to strip is
   # a backslash; -a takes a bare name or a Unix path, so strip both.
@@ -283,6 +289,12 @@ new_instance_flag() {
 windows_default_app() {
   local assoc="$1"
   command -v powershell.exe >/dev/null 2>&1 || return 1
+
+  # Through the environment, not spliced into the script text: with -u the
+  # caller chooses the scheme outright, and an extension can hold a quote, so
+  # embedding it would let the value end the string literal it sits in.
+  WINOPEN_ASSOC="$assoc" \
+  WSLENV="${WSLENV:+$WSLENV:}WINOPEN_ASSOC" \
   powershell.exe -NoProfile -Command "
 Add-Type -TypeDefinition @\"
 using System;using System.Text;using System.Runtime.InteropServices;
@@ -292,7 +304,7 @@ public static class WinAssoc {
  public static string Exe(string a){var sb=new StringBuilder(1024);uint n=(uint)sb.Capacity;
  return AssocQueryString(0,2,a,\"open\",sb,ref n)==0?sb.ToString():null;}}
 \"@
-[WinAssoc]::Exe('$assoc')" 2>/dev/null | tr -d '\r' | head -1
+[WinAssoc]::Exe(\$env:WINOPEN_ASSOC)" 2>/dev/null | tr -d '\r' | head -1
 }
 
 # The key AssocQueryString wants: a scheme without its colon for a URL, an
@@ -308,6 +320,10 @@ assoc_key_for() {
   printf '.%s\n' "${base##*.}"
 }
 
+# notepad.exe is the TextEdit analogue, so -e is pinned to it and only -t takes
+# the override. With no override, -t does not come through here at all: it asks
+# Windows what handles .txt, which open_target does with SEE_MASK_CLASSNAME.
+# This is the fallback for when there is no powershell.exe to ask with.
 resolve_editor() {
   if [[ "$editor_mode" == "textedit" ]]; then
     echo "notepad.exe"
@@ -386,15 +402,21 @@ open_target() {
   # and -W means there what it means everywhere. Running it in the foreground
   # instead made -e and -t wait for the editor to exit whether or not -W was
   # given -- measured at 5s either way against an editor that sleeps 5s.
+  # Per target, not per run: appending to a script-level array left the flag on
+  # every later target, and the second one was handed --new-window as the
+  # program to run rather than the application.
+  local -a opener_flags=()
+
   local opener=""
   if [[ -n "$editor_mode" ]]; then
     # -t means whatever Windows registered for .txt, which is not the same
     # question as "what opens this file". SEE_MASK_CLASSNAME asks it directly,
     # and is the only way to reach it: on Windows 11 the answer is a Store app
     # that `ftype` cannot name and whose path is unreadable from WSL. Falls
-    # through to notepad.exe when there is no powershell.exe to ask with.
+    # through to resolve_editor when there is no powershell.exe to ask with.
     if [[ "$editor_mode" == "default" && -z "${WINOPEN_EDITOR:-}" ]]; then
-      if shell_execute "$addressed" "" ".txt" 1; then
+      if shell_execute "$addressed" "$(join_params ${app_args[@]+"${app_args[@]}"})" ".txt" 1; then
+        warn_no_new_instance "the .txt handler"
         return
       fi
     fi
@@ -403,6 +425,7 @@ open_target() {
     editor="$(resolve_editor)"
     editor_path="$(command -v "$editor" 2>/dev/null)" || die "editor not found: $editor"
     if [[ "$editor_path" != /mnt/* ]]; then
+      warn_no_new_instance "${editor##*/}"
       "$editor" "$target"
       return
     fi
@@ -413,6 +436,7 @@ open_target() {
 
   # A directory with nothing else asked for belongs to Explorer.
   if [[ -z "$opener" ]] && ! $url_target && [[ -d "$target" ]]; then
+    warn_no_new_instance "Explorer"
     run_explorer "$addressed"
     return
   fi
@@ -422,8 +446,12 @@ open_target() {
     # has to be resolved before it can be asked for a new window.
     local resolved="$opener" key nflag
     if [[ -z "$resolved" ]]; then
-      if key="$(assoc_key_for "$target" "$url_target")"; then
-        resolved="$(windows_default_app "$key")"
+      # Both of these are allowed to fail -- no extension to look up by, or no
+      # powershell.exe to ask with. A bare assignment would end the run instead,
+      # which is the opposite of opening the target and saying what was missed.
+      key="$(assoc_key_for "$target" "$url_target")" || key=""
+      if [[ -n "$key" ]]; then
+        resolved="$(windows_default_app "$key")" || resolved=""
       fi
     fi
 
@@ -687,9 +715,12 @@ if $flag_stdin; then
   cat > "$tmpfile"
 
   # open(1) defines -f as reading stdin and opening the result "in the default
-  # text editor", so it implies -t -- unless an editor flag was given, in which
-  # case that one was asked for explicitly.
-  [[ -n "$editor_mode" ]] || editor_mode="default"
+  # text editor", so it implies -t -- unless the caller already said what to
+  # open it with. -a counts: open_target consults editor_mode before app, so an
+  # implied -t here would have quietly overruled an explicit -a.
+  if [[ -z "$editor_mode" && -z "$app" ]]; then
+    editor_mode="default"
+  fi
 
   # Deliberately not deleted. `start` returns as soon as it has handed the file
   # over, long before the application has read it, so removing it here removed
