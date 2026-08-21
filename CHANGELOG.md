@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`open` exited 1 on every successful call.** The `EXIT` trap ended on a
+  failed test whenever there was no temp file to clean up, and the trap's status
+  becomes the script's, so `open file && ...` never ran.
+- **Only the first directory of a multi-target call was opened.** `explorer.exe`
+  returns 1 whether it succeeded or not; under `set -euo pipefail` that ended the
+  run after the first target.
+
 ### Changed
 
 - **Renamed the project from `wsl-open` to `winopen`.** The old name collided

@@ -95,6 +95,14 @@ to_winpath() {
   wslpath -aw "$1" 2>/dev/null || die "cannot convert path: $1"
 }
 
+# explorer.exe returns 1 whether it succeeded or not, so its status carries no
+# information and must not be allowed to stand as ours. Left unhandled, set -e
+# takes it as failure: a single target exits 1 after opening fine, and a list of
+# them stops after the first.
+run_explorer() {
+  explorer.exe "$@" 2>/dev/null || true
+}
+
 
 # --- Argument parsing ---
 
@@ -129,8 +137,14 @@ done
 # --- Stdin mode ---
 
 tmpfile=""
+
+# Runs as the EXIT trap, so whatever this returns becomes the script's exit
+# status. Without the explicit success at the end, the common case -- no temp
+# file to remove -- leaves the failed test as the last status and every
+# successful run reports failure.
 cleanup() {
   [[ -n "$tmpfile" && -f "$tmpfile" ]] && rm -f "$tmpfile"
+  return 0
 }
 trap cleanup EXIT
 
@@ -157,11 +171,11 @@ open_target() {
     local parent winpath
     parent="$(dirname "$target")"
     winpath="$(to_winpath "$parent")"
-    explorer.exe "$winpath" 2>/dev/null
+    run_explorer "$winpath"
   elif $flag_reveal; then
     local winpath
     winpath="$(to_winpath "$target")"
-    explorer.exe /select,"$winpath" 2>/dev/null
+    run_explorer /select,"$winpath"
   elif $flag_editor; then
     local editor="${WINOPEN_EDITOR:-notepad.exe}"
     local editor_path
@@ -182,7 +196,7 @@ open_target() {
   elif [[ -d "$target" ]]; then
     local winpath
     winpath="$(to_winpath "$target")"
-    explorer.exe "$winpath" 2>/dev/null
+    run_explorer "$winpath"
   else
     local winpath
     winpath="$(to_winpath "$target")"
