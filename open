@@ -9,9 +9,19 @@ die() {
   exit 1
 }
 
+# For what could not be honoured but does not stop the target being opened.
+# Refusing is right when a flag contradicts the target -- a URL has no
+# enclosing folder for -D to show. It is wrong when the flag is a guarantee we
+# cannot offer, as -n is for an application whose flag we do not know: the open
+# itself is still valid, and denying it outright costs the caller everything
+# over a preference that might have been satisfied anyway.
+warn() {
+  echo "open: $*" >&2
+}
+
 usage() {
   cat <<'EOF'
-Usage: open [-a app] [-u url] [-DeRtWf] [target ...]
+Usage: open [-a app] [-u url] [-DeRtWfn] [target ...] [--args arg ...]
 
 Open files, directories, and URLs from WSL using Windows applications.
 
@@ -21,10 +31,13 @@ Flags:
                even if a file of that name exists
   -D           Open the enclosing folder in Explorer
   -R           Reveal in Explorer (highlight the file)
-  -e           Open in text editor (notepad.exe or $WINOPEN_EDITOR)
-  -t           Alias for -e
+  -e           Open in notepad.exe
+  -t           Open in the default text editor ($WINOPEN_EDITOR, else notepad.exe)
   -W           Wait for the application to exit
-  -f           Read stdin into a temp file, then open it
+  -n           Open a new instance, rather than reusing a running one
+  -f           Read stdin into a temp file, then open it in the text editor
+  --args <...> Pass all remaining arguments to the launched application
+  --           Treat all remaining arguments as targets
   -h, --help   Show this help
   -V, --version  Show version
   --check-update  Check if a newer version is available
@@ -116,9 +129,12 @@ is_url() {
   [[ "$1" =~ ^[a-zA-Z][a-zA-Z0-9+.-]*: ]] && [[ ! -e "$1" ]]
 }
 
+# The -- matters: without it wslpath reads a target named "-foo" as its own
+# flags and prints its usage, so `open -- -foo` protected our parser and then
+# failed here anyway. Same for dirname below.
 to_winpath() {
   [[ -e "$1" ]] || die "no such file or directory: $1"
-  wslpath -aw "$1" 2>/dev/null || die "cannot convert path: $1"
+  wslpath -aw -- "$1" 2>/dev/null || die "cannot convert path: $1"
 }
 
 # explorer.exe returns 1 whether it succeeded or not, so its status carries no
@@ -129,51 +145,316 @@ run_explorer() {
   explorer.exe "$@" 2>/dev/null || true
 }
 
-open_target() {
-  local target="$1"
-  local forced_url="$2"
+# -a with nothing to open. `start` takes an application on its own, so this is
+# the same call as the -a branch of open_target minus the document.
+launch_app() {
+  local -a extra=()
 
-  if $forced_url || is_url "$target"; then
-    cmd.exe /C start "" "$target" 2>/dev/null
-  elif $flag_enclosing; then
-    local parent winpath
-    parent="$(dirname "$target")"
-    winpath="$(to_winpath "$parent")"
-    run_explorer "$winpath"
-  elif $flag_reveal; then
-    local winpath
-    winpath="$(to_winpath "$target")"
-    run_explorer /select,"$winpath"
-  elif $flag_editor; then
-    local editor="${WINOPEN_EDITOR:-notepad.exe}"
-    local editor_path
-    editor_path="$(command -v "$editor" 2>/dev/null)" || die "editor not found: $editor"
-    if [[ "$editor_path" == /mnt/* ]]; then
-      "$editor" "$(to_winpath "$target")"
+  if $flag_new; then
+    local nflag
+    if nflag="$(new_instance_flag "$app")"; then
+      extra+=("$nflag")
     else
-      "$editor" "$target"
-    fi
-  elif [[ -n "$app" ]]; then
-    local winpath
-    winpath="$(to_winpath "$target")"
-    if $flag_wait; then
-      cmd.exe /C start "" /WAIT "$app" "$winpath" 2>/dev/null
-    else
-      cmd.exe /C start "" "$app" "$winpath" 2>/dev/null
-    fi
-  elif [[ -d "$target" ]]; then
-    local winpath
-    winpath="$(to_winpath "$target")"
-    run_explorer "$winpath"
-  else
-    local winpath
-    winpath="$(to_winpath "$target")"
-    if $flag_wait; then
-      cmd.exe /C start "" /WAIT "$winpath" 2>/dev/null
-    else
-      cmd.exe /C start "" "$winpath" 2>/dev/null
+      warn "-n: no new-instance flag known for ${app##*/}; opening normally, which may reuse a running window"
     fi
   fi
+  if [[ ${#app_args[@]} -gt 0 ]]; then
+    extra+=("${app_args[@]}")
+  fi
+
+  local -a cmd=(cmd.exe /C start "")
+  if $flag_wait; then
+    cmd+=(/WAIT)
+  fi
+  cmd+=("$app")
+  if [[ ${#extra[@]} -gt 0 ]]; then
+    cmd+=("${extra[@]}")
+  fi
+
+  "${cmd[@]}" 2>/dev/null
+}
+
+# The paths that never reach the -n block below -- Explorer, a Linux editor, the
+# class-based -t open -- have no flag to pass and no application to pass it to.
+# Silence there would break the contract every other -n case keeps.
+warn_no_new_instance() {
+  if $flag_new; then
+    warn "-n: cannot ask $1 for a new window; opening normally"
+  fi
+}
+
+# ShellExecuteEx, for the one thing `start` cannot express: opening a file with
+# a class other than its own extension, which is what -t needs -- whatever
+# handles .txt, not whatever handles this file.
+#
+# Values travel as environment variables rather than inside the PowerShell
+# source, so a target containing quotes, spaces or ampersands needs no escaping
+# on the way through. WSLENV is what carries them across the boundary, and it is
+# appended to rather than replaced -- Windows Terminal already sets it.
+#
+# SEE_MASK_NOASYNC matters: without it the launch can be abandoned when the
+# calling process exits, and this one exits immediately.
+shell_execute() {
+  local file="$1" class="$2" show="$3"
+
+  command -v powershell.exe >/dev/null 2>&1 || return 1
+
+  WINOPEN_SE_FILE="$file" \
+  WINOPEN_SE_CLASS="$class" \
+  WINOPEN_SE_SHOW="$show" \
+  WINOPEN_SE_WAIT="$($flag_wait && echo 1 || echo 0)" \
+  WSLENV="${WSLENV:+$WSLENV:}WINOPEN_SE_FILE:WINOPEN_SE_CLASS:WINOPEN_SE_SHOW:WINOPEN_SE_WAIT" \
+  powershell.exe -NoProfile -Command '
+Add-Type -TypeDefinition @"
+using System;using System.Runtime.InteropServices;
+[StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+public struct SEI {
+  public int cbSize; public uint fMask; public IntPtr hwnd;
+  [MarshalAs(UnmanagedType.LPWStr)] public string lpVerb;
+  [MarshalAs(UnmanagedType.LPWStr)] public string lpFile;
+  [MarshalAs(UnmanagedType.LPWStr)] public string lpParameters;
+  [MarshalAs(UnmanagedType.LPWStr)] public string lpDirectory;
+  public int nShow; public IntPtr hInstApp; public IntPtr lpIDList;
+  [MarshalAs(UnmanagedType.LPWStr)] public string lpClass;
+  public IntPtr hkeyClass; public uint dwHotKey; public IntPtr hIcon; public IntPtr hProcess;
+}
+public static class WinShell {
+  [DllImport("shell32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+  public static extern bool ShellExecuteExW(ref SEI i);
+  [DllImport("kernel32.dll")] public static extern uint WaitForSingleObject(IntPtr h, uint ms);
+}
+"@
+$i = New-Object SEI
+$i.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($i)
+$i.fMask  = 0x100
+$i.lpFile = $env:WINOPEN_SE_FILE
+$i.nShow  = [int]$env:WINOPEN_SE_SHOW
+if ($env:WINOPEN_SE_CLASS)  { $i.fMask = $i.fMask -bor 0x1; $i.lpClass = $env:WINOPEN_SE_CLASS }
+if ($env:WINOPEN_SE_WAIT -eq "1") { $i.fMask = $i.fMask -bor 0x40 }
+if (-not [WinShell]::ShellExecuteExW([ref]$i)) { exit 1 }
+if ($env:WINOPEN_SE_WAIT -eq "1" -and $i.hProcess -ne [IntPtr]::Zero) {
+  [void][WinShell]::WaitForSingleObject($i.hProcess, 0xFFFFFFFF)
+}
+exit 0' >/dev/null 2>&1
+}
+
+# Windows has no general "new instance" switch. ShellExecute asks the
+# application, and most of them single-instance themselves -- which is exactly
+# why a browser handed a URL puts a tab in the window that was last active. What
+# does work is the application's own flag, so -n is only as good as this table.
+# Anything not in it is opened normally, with a warning: see warn().
+new_instance_flag() {
+  # AssocQueryString answers with a Windows path, so the separator to strip is
+  # a backslash; -a takes a bare name or a Unix path, so strip both.
+  local exe="${1##*/}"
+  exe="${exe##*\\}"
+  case "${exe,,}" in
+    chrome.exe|msedge.exe|brave.exe|vivaldi.exe|opera.exe|thorium.exe)
+      echo "--new-window" ;;
+    firefox.exe|librewolf.exe|waterfox.exe)
+      echo "-new-window" ;;
+    *)
+      return 1 ;;
+  esac
+}
+
+# What Windows would launch for a scheme or a file extension. AssocQueryString
+# is the only reliable answer on Windows 11: `ftype` returns nothing for a Store
+# app, and the UserChoice key holds an AppX id with no command line. The #13
+# prototype also found UserChoice disagreeing outright -- it said Edge for http
+# while the shell launched Chrome.
+#
+# PowerShell stays optional: without it -n simply cannot resolve a default
+# application, and says so rather than guessing.
+windows_default_app() {
+  local assoc="$1"
+  command -v powershell.exe >/dev/null 2>&1 || return 1
+
+  # Through the environment, not spliced into the script text: with -u the
+  # caller chooses the scheme outright, and an extension can hold a quote, so
+  # embedding it would let the value end the string literal it sits in.
+  WINOPEN_ASSOC="$assoc" \
+  WSLENV="${WSLENV:+$WSLENV:}WINOPEN_ASSOC" \
+  powershell.exe -NoProfile -Command "
+Add-Type -TypeDefinition @\"
+using System;using System.Text;using System.Runtime.InteropServices;
+public static class WinAssoc {
+ [DllImport(\"Shlwapi.dll\", CharSet=CharSet.Unicode)]
+ private static extern uint AssocQueryString(int f,int s,string a,string e,StringBuilder o,ref uint c);
+ public static string Exe(string a){var sb=new StringBuilder(1024);uint n=(uint)sb.Capacity;
+ return AssocQueryString(0,2,a,\"open\",sb,ref n)==0?sb.ToString():null;}}
+\"@
+[WinAssoc]::Exe(\$env:WINOPEN_ASSOC)" 2>/dev/null | tr -d '\r' | head -1
+}
+
+# The key AssocQueryString wants: a scheme without its colon for a URL, an
+# extension with its dot for a file.
+assoc_key_for() {
+  local target="$1" url_target="$2"
+  if $url_target; then
+    printf '%s\n' "${target%%:*}"
+    return 0
+  fi
+  local base="${target##*/}"
+  [[ "$base" == *.* ]] || return 1
+  printf '.%s\n' "${base##*.}"
+}
+
+# notepad.exe is the TextEdit analogue, so -e is pinned to it and only -t takes
+# the override. With no override, -t does not come through here at all: it asks
+# Windows what handles .txt, which open_target does with SEE_MASK_CLASSNAME.
+# This is the fallback for when there is no powershell.exe to ask with.
+resolve_editor() {
+  if [[ "$editor_mode" == "textedit" ]]; then
+    echo "notepad.exe"
+  else
+    echo "${WINOPEN_EDITOR:-notepad.exe}"
+  fi
+}
+
+# `start` returns as soon as Windows has taken the target, and takes /WAIT when
+# the caller asked to wait. One place to assemble the command line, so -W and
+# --args behave the same whether an application was named or not.
+start_open() {
+  local opener="$1" addressed="$2"
+  local -a cmd=(cmd.exe /C start "")
+
+  if $flag_wait; then
+    cmd+=(/WAIT)
+  fi
+  if [[ -n "$opener" ]]; then
+    cmd+=("$opener")
+  fi
+  # Before the target: a browser reads --new-window as a flag only ahead of the
+  # URL, and behind it would be taken for a second thing to open.
+  if [[ ${#opener_flags[@]} -gt 0 ]]; then
+    cmd+=("${opener_flags[@]}")
+  fi
+  cmd+=("$addressed")
+  if [[ ${#app_args[@]} -gt 0 ]]; then
+    cmd+=("${app_args[@]}")
+  fi
+
+  "${cmd[@]}" 2>/dev/null
+}
+
+# Two independent questions, which the old chain collapsed into one: how the
+# target is *addressed* -- a URL passes through as it stands, anything else
+# becomes a Windows path -- and *what opens it*. Testing for a URL first and
+# returning made it answer both, so -a and -W were silently dropped for every
+# URL: `open -a chrome.exe https://x` did not use Chrome.
+open_target() {
+  local target="$1" forced_url="$2"
+
+  local url_target=false
+  if $forced_url || is_url "$target"; then
+    url_target=true
+  fi
+
+  # These need a file to point at. Ignoring them for a URL is how the old chain
+  # behaved; saying so is better than doing something else silently.
+  if $url_target; then
+    if $flag_enclosing; then die "-D needs a file, not a URL: $target"; fi
+    if $flag_reveal; then die "-R needs a file, not a URL: $target"; fi
+    if [[ -n "$editor_mode" ]]; then die "-e and -t need a file, not a URL: $target"; fi
+  fi
+
+  local addressed
+  if $url_target; then
+    addressed="$target"
+  else
+    addressed="$(to_winpath "$target")"
+  fi
+
+  if $flag_enclosing; then
+    run_explorer "$(to_winpath "$(dirname -- "$target")")"
+    return
+  fi
+
+  if $flag_reveal; then
+    run_explorer /select,"$addressed"
+    return
+  fi
+
+  # A Linux editor is run in place, on the Linux path: Windows cannot launch it,
+  # and for a terminal editor blocking is exactly what the caller wants. A
+  # Windows one goes through `start` like everything else, so it returns at once
+  # and -W means there what it means everywhere. Running it in the foreground
+  # instead made -e and -t wait for the editor to exit whether or not -W was
+  # given -- measured at 5s either way against an editor that sleeps 5s.
+  # Per target, not per run: appending to a script-level array left the flag on
+  # every later target, and the second one was handed --new-window as the
+  # program to run rather than the application.
+  local -a opener_flags=()
+
+  local opener=""
+  if [[ -n "$editor_mode" ]]; then
+    # -t means whatever Windows registered for .txt, which is not the same
+    # question as "what opens this file". SEE_MASK_CLASSNAME asks it directly,
+    # and is the only way to reach it: on Windows 11 the answer is a Store app
+    # that `ftype` cannot name and whose path is unreadable from WSL. Falls
+    # through to resolve_editor when there is no powershell.exe to ask with.
+    if [[ "$editor_mode" == "default" && -z "${WINOPEN_EDITOR:-}" ]]; then
+      # lpParameters has to be NULL when lpFile is a document: with it set,
+      # ShellExecuteEx reports success and opens nothing at all. So --args
+      # cannot travel this path -- losing them beats losing the open.
+      if [[ ${#app_args[@]} -gt 0 ]]; then
+        warn "--args: the .txt handler is asked to open the document itself, which takes no arguments; ignoring them"
+      fi
+      if shell_execute "$addressed" ".txt" 1; then
+        warn_no_new_instance "the .txt handler"
+        return
+      fi
+    fi
+
+    local editor editor_path
+    editor="$(resolve_editor)"
+    editor_path="$(command -v "$editor" 2>/dev/null)" || die "editor not found: $editor"
+    if [[ "$editor_path" != /mnt/* ]]; then
+      warn_no_new_instance "${editor##*/}"
+      "$editor" "$target"
+      return
+    fi
+    opener="$editor"
+  elif [[ -n "$app" ]]; then
+    opener="$app"
+  fi
+
+  # A directory with nothing else asked for belongs to Explorer.
+  if [[ -z "$opener" ]] && ! $url_target && [[ -d "$target" ]]; then
+    warn_no_new_instance "Explorer"
+    run_explorer "$addressed"
+    return
+  fi
+
+  if $flag_new; then
+    # With no -a, the application is whatever Windows would have picked, so it
+    # has to be resolved before it can be asked for a new window.
+    local resolved="$opener" key nflag
+    if [[ -z "$resolved" ]]; then
+      # Both of these are allowed to fail -- no extension to look up by, or no
+      # powershell.exe to ask with. A bare assignment would end the run instead,
+      # which is the opposite of opening the target and saying what was missed.
+      key="$(assoc_key_for "$target" "$url_target")" || key=""
+      if [[ -n "$key" ]]; then
+        resolved="$(windows_default_app "$key")" || resolved=""
+      fi
+    fi
+
+    if [[ -z "$resolved" ]]; then
+      warn "-n: could not work out which application opens $target; opening normally"
+    elif nflag="$(new_instance_flag "$resolved")"; then
+      opener_flags+=("$nflag")
+      # Naming the application is the point: handing the target to the default
+      # handler would let the running instance take it, which is what -n asks
+      # us not to do.
+      opener="$resolved"
+    else
+      warn "-n: no new-instance flag known for ${resolved##*/}; opening normally, which may reuse a running window"
+    fi
+  fi
+
+  start_open "$opener" "$addressed"
 }
 
 
@@ -341,8 +622,21 @@ uninstall_xdg() {
 
 flag_enclosing=false
 flag_reveal=false
-flag_editor=false
 flag_wait=false
+flag_new=false
+
+# Everything after --args, passed to the launched application rather than
+# opened. Kept apart from targets so the two cannot be confused.
+app_args=()
+
+# Flags for the launched application that winopen adds itself, as -n does.
+# Separate from app_args, which are the caller's.
+opener_flags=()
+
+# "" | textedit (-e) | default (-t). macOS keeps these apart: -e names one
+# application, -t asks the system which one handles text. Holding both in a
+# single variable makes the later flag win, as a repeated flag normally does.
+editor_mode=""
 flag_stdin=false
 app=""
 
@@ -373,8 +667,10 @@ while [[ $# -gt 0 ]]; do
     --uninstall-xdg) uninstall_xdg; exit 0 ;;
     -D)           flag_enclosing=true; shift ;;
     -R)           flag_reveal=true; shift ;;
-    -e|-t)        flag_editor=true; shift ;;
+    -e)           editor_mode="textedit"; shift ;;
+    -t)           editor_mode="default"; shift ;;
     -W)           flag_wait=true; shift ;;
+    -n)           flag_new=true; shift ;;
     -f)           flag_stdin=true; shift ;;
     -a)
       [[ -n "${2:-}" ]] || die "-a requires an application name"
@@ -382,6 +678,10 @@ while [[ $# -gt 0 ]]; do
     -u)
       [[ -n "${2:-}" ]] || die "-u requires a URL"
       add_target "$2" true; shift 2 ;;
+    --args)
+      shift
+      app_args=("$@")
+      break ;;
     --)
       shift
       for arg in "$@"; do add_target "$arg"; done
@@ -393,28 +693,46 @@ done
 
 # --- Stdin mode ---
 
-tmpfile=""
-
-# Runs as the EXIT trap, so whatever this returns becomes the script's exit
-# status. Without the explicit success at the end, the common case -- no temp
-# file to remove -- leaves the failed test as the last status and every
-# successful run reports failure.
-cleanup() {
-  [[ -n "$tmpfile" && -f "$tmpfile" ]] && rm -f "$tmpfile"
-  return 0
-}
-trap cleanup EXIT
-
 if $flag_stdin; then
-  tmpfile="$(mktemp /tmp/winopen-XXXXXX)"
+  # The suffix matters: an extensionless file has no association, so handing it
+  # to the default handler asks Windows to open something it knows nothing
+  # about.
+  tmpfile="$(mktemp --suffix=.txt /tmp/winopen-XXXXXX)"
   cat > "$tmpfile"
+
+  # open(1) defines -f as reading stdin and opening the result "in the default
+  # text editor", so it implies -t -- unless the caller already said what to
+  # open it with. -a counts: open_target consults editor_mode before app, so an
+  # implied -t here would have quietly overruled an explicit -a.
+  if [[ -z "$editor_mode" && -z "$app" ]]; then
+    editor_mode="default"
+  fi
+
+  # Deliberately not deleted. `start` returns as soon as it has handed the file
+  # over, long before the application has read it, so removing it here removed
+  # it out from under the app -- the file was reliably gone a second later.
+  # Leaving it for the OS to reap is what macOS does, and the only option that
+  # does not either race the application or block until it exits.
   add_target "$tmpfile"
 fi
 
 # --- Validate targets ---
 
 if [[ ${#targets[@]} -eq 0 ]]; then
-  die "no target specified (use -h for help)"
+  # `open -a Foo` with no file launches the application with no document, so an
+  # empty target list is only a mistake when there is no application to launch
+  # either.
+  if [[ -n "$app" ]]; then
+    launch_app
+    exit 0
+  fi
+
+  # A bare `open` is a mistake, not a request, so the usage goes to stderr and
+  # the status says so -- unlike -h, where the user asked and gets stdout and 0.
+  # Deliberately not defaulting to the current directory: `open .` is the
+  # documented idiom, and requiring the dot is what macOS and `code` both do.
+  usage >&2
+  exit 1
 fi
 
 # --- Dispatch ---

@@ -64,11 +64,15 @@ open .                            # Open current directory in Explorer
 open ~/Documents/report.pdf       # Open file with default Windows app
 open -D ~/Documents/report.pdf    # Open enclosing folder in Explorer
 open -R ~/Documents/report.pdf    # Reveal file in Explorer
-open -e ~/.bashrc                 # Open in text editor (notepad.exe)
+open -e ~/.bashrc                 # Open in notepad.exe
+open -t ~/.bashrc                 # Open in the default text editor
 open -a notepad.exe ~/.bashrc     # Open with specific Windows app
 open -W somefile.txt              # Wait for the app to close
-echo "hello" | open -f            # Read from stdin, open as temp file
+echo "hello" | open -f            # Read stdin, open it in the text editor
 open file1.txt file2.txt          # Open multiple files
+open -a notepad.exe               # Launch an app with no document
+open -a chrome.exe --args --incognito
+open -- -weird-name.txt           # A target whose name starts with a dash
 ```
 
 ### Flags
@@ -80,16 +84,94 @@ open file1.txt file2.txt          # Open multiple files
 | `-u <url>` | Open a URL with whatever application claims its scheme, even if a file of that name exists |
 | `-D` | Open the enclosing folder in Explorer |
 | `-R` | Reveal in Explorer (highlight the file) |
-| `-e` | Open in text editor (notepad.exe by default) |
-| `-t` | Alias for `-e` |
+| `-e` | Open in `notepad.exe` |
+| `-t` | Open in the default text editor (`$WINOPEN_EDITOR`, else whatever Windows registered for `.txt`) |
 | `-W` | Wait for the application to exit before returning |
-| `-f` | Read from stdin, write to a temp file, then open it |
+| `-n` | Open a new instance, rather than reusing a running one |
+| `-f` | Read stdin into a temp file, then open it in the text editor (as `-t`) |
+| `--args <...>` | Pass all remaining arguments to the launched application |
+| `--` | Treat all remaining arguments as targets |
 | `-h`, `--help` | Show help |
 | `-V`, `--version` | Show version |
 | `--check-update` | Check if a newer version is available |
 | `--update` | Update to the latest version |
 | `--install-xdg` | Install an `xdg-open` shim so other programs route through winopen |
 | `--uninstall-xdg` | Remove the shim and restore any backup |
+
+### Text editors
+
+`-e` always uses `notepad.exe`. `-t` uses `$WINOPEN_EDITOR` if set, and
+otherwise opens the file with whatever Windows has registered for `.txt` —
+whatever the file's own extension happens to be.
+
+That last part asks Windows directly, via `ShellExecuteEx` with
+`SEE_MASK_CLASSNAME`, because there is no cheaper way to reach it: on Windows 11
+the `.txt` handler is a Store app that `ftype` cannot name and whose path is
+unreadable from WSL. It needs `powershell.exe`; without it, `-t` falls back to
+`notepad.exe`.
+
+### New instances
+
+`-n` forces a new window rather than letting a running instance take the target:
+
+```bash
+open -n https://example.com          # a new browser window
+open -n -a chrome.exe file.html
+```
+
+Windows has no general "new instance" switch — `ShellExecute` asks the
+application, and most single-instance themselves, which is exactly why a
+browser handed a URL puts the tab in whichever window was last active. What
+works is the application's own flag, so `-n` only knows the browsers it has a
+flag for: Chrome, Edge, Brave, Vivaldi, Opera and Thorium take `--new-window`,
+Firefox, LibreWolf and Waterfox take `-new-window`.
+
+For anything else, the file is still opened — it just says that the guarantee
+was not available:
+
+```
+$ open -n -a notepad.exe file.txt
+open: -n: no new-instance flag known for notepad.exe; opening normally, which may reuse a running window
+```
+
+It opens anyway on purpose. Whether an unknown application reuses a window or
+starts a fresh one is its own business, and many start a fresh one regardless —
+so refusing would cost you the whole operation over a preference that may well
+have been satisfied. A flag that *contradicts* the target is different: `-R` on
+a URL is refused outright, because there is no enclosing folder to reveal.
+
+With no `-a`, the application has to be resolved before it can be asked for a
+new window, which needs `powershell.exe`. Without it, `-n` says so and opens
+normally.
+
+### Passing arguments, and targets that look like flags
+
+`--args` passes everything after it to the launched application rather than
+opening it, as macOS `open(1)` does:
+
+```bash
+open -a chrome.exe --args --incognito
+```
+
+`--` is the opposite: everything after it is a target, however it is spelled.
+This is an extension — `open(1)` does not document it — kept because it is the
+usual Unix convention and the only way to open a file whose name begins with a
+dash:
+
+```bash
+open -- -weird-name.txt
+```
+
+Whichever of the two comes first claims the rest of the command line.
+
+### No target
+
+`open` with no arguments prints its usage to stderr and exits 1. It does not
+default to the current directory — `open .` is the documented idiom, the same
+as macOS and `code`.
+
+`open -a <app>` with no file is not a mistake: it launches the application with
+no document, as macOS does.
 
 ### URLs
 
@@ -103,11 +185,25 @@ file. `-u` says the opposite: open it as a URL regardless.
 Windows reports success for a scheme nothing has registered, so `open` cannot
 tell you when a URL had nowhere to go.
 
+`-a`, `-W` and `--args` apply to URLs as they do to files, so
+`open -a chrome.exe https://example.com` really does use Chrome. `-R`, `-D`,
+`-e` and `-t` need a file to point at and are rejected for a URL rather than
+silently ignored.
+
+### Reading from stdin
+
+`-f` writes standard input to a temporary `.txt` file and opens it in the text
+editor, the same one `-t` resolves.
+
+The temporary file is **not** deleted. `start` returns as soon as Windows has
+been handed the file, long before the application has read it, so deleting it
+would race whatever is opening it. It is left in `/tmp` for the system to reap.
+
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `WINOPEN_EDITOR` | Override the default text editor (default: `notepad.exe`) |
+| `WINOPEN_EDITOR` | The editor `-t` uses. Unset, `-t` asks Windows what handles `.txt`. `-e` ignores it. |
 | `WINOPEN_XDG` | Set to `0` to bypass the `xdg-open` shim for one command |
 
 ## xdg-open integration
@@ -183,6 +279,78 @@ through winopen as well, add this yourself:
 ```bash
 export BROWSER=/usr/local/bin/xdg-open
 ```
+
+## Parity with macOS `open(1)`
+
+macOS `open(1)` is the reference for flag names and semantics. Where winopen
+diverges it is on purpose, and it is listed here.
+
+### Supported
+
+| Flag | Notes |
+|------|-------|
+| `-a <app>` | |
+| `-e` | `notepad.exe`, the TextEdit analogue |
+| `-t` | `$WINOPEN_EDITOR`, else whatever Windows registered for `.txt` |
+| `-f` | Writes a `.txt` temp file and opens it as `-t`. The file is left for the system to reap |
+| `-W` | |
+| `-R` | Reveals in Explorer rather than Finder |
+| `-u <url>` | |
+| `--args` | |
+| `-n` | **Partial.** See below |
+
+### Not supported
+
+| Flag | Why |
+|------|-----|
+| `-b <bundle id>` | Windows has no bundle identifiers |
+| `-g` | Windows offers no way to do it. `ShellExecuteEx` with `SW_SHOWNOACTIVATE` is only a hint, and every application tested ignores it and takes the foreground anyway — verified against a Store app, a Win32 app, and a cold start, on Windows 11 build 26200 |
+| `-F` | No Windows equivalent of launching without restoring windows |
+| `-j` | Launch hidden: no clean equivalent, little value |
+| `-s <sdk>` | Xcode-specific, and paired with macOS's `-h` |
+| `--env` | Niche |
+| `--stdin`, `--stdout`, `--stderr` | Niche |
+| `--arch` | Not applicable |
+
+### Deliberate deviations
+
+**`-h` means help here.** On macOS it searches header locations for a matching
+header and opens it. This is the one place winopen actively contradicts
+`open(1)`, and it is not going to change: `-h` is help everywhere else on this
+platform.
+
+**`-n` is a partial guarantee.** macOS has an API for launching a new instance.
+Windows does not — `ShellExecute` asks the application, and most single-instance
+themselves. winopen passes the application's own new-window flag and knows the
+common browsers; for anything else it opens the target and says the guarantee
+was not available, rather than refusing. See [New instances](#new-instances).
+
+**`-e` and `-t` reject URLs**, as do `-R` and `-D`. They need a file to point
+at. macOS is not explicit about this; ignoring the flag silently seemed worse
+than saying so.
+
+**An unopenable URL cannot be reported.** macOS `open` errors when nothing
+claims a scheme. Windows reports success unconditionally, so a `0` from winopen
+means the URL was handed over, not that anything opened it.
+
+### Extensions with no macOS counterpart
+
+| Flag | |
+|------|--|
+| `-D` | Open the enclosing folder in Explorer. Not a macOS flag at all — `open(1)` has `-R` but no `-D` |
+| `--` | Everything after it is a target. `open(1)` does not document it, but it is the usual Unix convention and the only way to open a file whose name begins with a dash |
+| `-V`, `--version` | |
+| `--check-update`, `--update` | |
+| `--install-xdg`, `--uninstall-xdg` | Registering as the system `xdg-open`. See [xdg-open integration](#xdg-open-integration) |
+
+| Variable | |
+|----------|--|
+| `WINOPEN_EDITOR` | The editor `-t` uses |
+| `WINOPEN_XDG` | Set to `0` to bypass the `xdg-open` shim |
+
+The `xdg-open` shim has its own contract, which is not `open(1)`'s — one target,
+and `xdg-open`'s documented exit codes. It never returns `4` ("the action
+failed"), because Windows does not report whether the action succeeded.
 
 ## Requirements
 
