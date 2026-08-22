@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The install is atomic.** `install.sh` piped `curl` straight at
+  `$PREFIX/bin/open`, so a dropped connection left a truncated file on `PATH`
+  under the name `open` — verified: it replaced a working install with 20 lines
+  that would not run. It now downloads in full, checks that what arrived is
+  actually the tool rather than an error page, and puts it in place with a
+  rename, which either happens or does not.
 - **The update check uses the `releases/latest` redirect** instead of the
   GitHub API. The unauthenticated API is limited to 60 requests an hour per IP,
   and the tag was being extracted from JSON with `grep`. A repository with no

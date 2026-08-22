@@ -50,6 +50,7 @@ unhooks:
 test:
     @bash tests/cli.sh
     @bash tests/xdg.sh
+    @bash tests/install.sh
 
 # The half CI cannot have: needs a real WSL, and opens windows
 test-windows:

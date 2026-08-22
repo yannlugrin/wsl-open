@@ -389,7 +389,7 @@ nowhere else.
 
 Tests come in two halves, because only one of them can be automated.
 
-`tests/cli.sh` and `tests/xdg.sh` run **anywhere**, including a Linux CI runner
+`tests/cli.sh`, `tests/xdg.sh` and `tests/install.sh` run **anywhere**, including a Linux CI runner
 with no WSL at all. They put stubs for `wslpath`, `cmd.exe` and `explorer.exe`
 first on a scrubbed `PATH` and assert the exact command line the tool builds,
 along with its exit status.
