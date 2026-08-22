@@ -18,30 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A `pre-push` hook**, installed with `just hooks`, running the same checks
   CI does. CI pins the shellcheck version so a finding cannot appear there and
   nowhere else.
-
-### Changed
-
-- **The install is atomic.** `install.sh` piped `curl` straight at
-  `$PREFIX/bin/open`, so a dropped connection left a truncated file on `PATH`
-  under the name `open` — verified: it replaced a working install with 20 lines
-  that would not run. It now downloads in full, checks that what arrived is
-  actually the tool rather than an error page, and puts it in place with a
-  rename, which either happens or does not.
-- **The update check uses the `releases/latest` redirect** instead of the
-  GitHub API. The unauthenticated API is limited to 60 requests an hour per IP,
-  and the tag was being extracted from JSON with `grep`. A repository with no
-  releases redirects to the releases page rather than to a tag, which is
-  detected rather than reported as a release named "releases".
-
-- **The task runner is now [`just`](https://github.com/casey/just)**, was
-  `make`. Installing from source does not require it — the README leads with
-  the plain `install -m 755` command, since that is the whole install. Pass a
-  prefix as an argument (`just prefix=~/.local install`) rather than through
-  the environment: `sudo` resets the environment, so `sudo PREFIX=... just
-  install` can quietly install to `/usr/local` instead.
-
-### Added
-
 - **A "Parity with macOS `open(1)`" section in the README**, listing what is
   supported, what is not and why, and every deliberate deviation — so parity
   claims are honest and a deliberate omission is not mistaken for a bug.
@@ -72,6 +48,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`open` never invokes `sudo`.** `--update`, `--install-xdg` and
+  `--uninstall-xdg` used to escalate on your behalf. They now say what they
+  would do and stop, leaving you to run it — and under `sudo` the destination
+  simply is writable, so the same code path just works. `--update` goes
+  further: it downloads and checks the new version as you, then prints the one
+  privileged copy, so the network fetch never runs as root.
+- **`--update` checks what it downloaded** is actually the tool before
+  replacing anything, as `install.sh` now does.
+- **The install is atomic.** `install.sh` piped `curl` straight at
+  `$PREFIX/bin/open`, so a dropped connection left a truncated file on `PATH`
+  under the name `open` — verified: it replaced a working install with 20 lines
+  that would not run. It now downloads in full, checks that what arrived is
+  actually the tool rather than an error page, and puts it in place with a
+  rename, which either happens or does not.
+- **The update check uses the `releases/latest` redirect** instead of the
+  GitHub API. The unauthenticated API is limited to 60 requests an hour per IP,
+  and the tag was being extracted from JSON with `grep`. A repository with no
+  releases redirects to the releases page rather than to a tag, which is
+  detected rather than reported as a release named "releases".
+
+- **The task runner is now [`just`](https://github.com/casey/just)**, was
+  `make`. Installing from source does not require it — the README leads with
+  the plain `install -m 755` command, since that is the whole install. Pass a
+  prefix as an argument (`just prefix=~/.local install`) rather than through
+  the environment: `sudo` resets the environment, so `sudo PREFIX=... just
+  install` can quietly install to `/usr/local` instead.
 - **`open -a <app>` with no file now launches the application**, with no
   document, as macOS `open(1)` does. It used to be rejected as "no target
   specified".
@@ -87,6 +89,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   With `$WINOPEN_EDITOR` unset, `-t` now asks Windows what it has registered for
   `.txt` and opens the file with that, whatever the file's own extension is. It
   needs `powershell.exe` to ask, and falls back to `notepad.exe` without it.
+- **Renamed the project from `wsl-open` to `winopen`.** The old name collided
+  with an unrelated project of the same name. The GitHub repository redirects,
+  so existing clones and install commands keep working. The installed command
+  is still `open`.
+- **Breaking:** the editor override is now `WINOPEN_EDITOR`, was
+  `WSL_OPEN_EDITOR`.
 
 ### Fixed
 
@@ -127,15 +135,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quotes are literal inside `$( )`, so the final line ran a command whose name
   included the quotes. The update itself had already succeeded; only the report
   of it was broken.
-
-### Changed
-
-- **Renamed the project from `wsl-open` to `winopen`.** The old name collided
-  with an unrelated project of the same name. The GitHub repository redirects,
-  so existing clones and install commands keep working. The installed command
-  is still `open`.
-- **Breaking:** the editor override is now `WINOPEN_EDITOR`, was
-  `WSL_OPEN_EDITOR`.
 
 ## [1.0.1] - 2026-03-06
 

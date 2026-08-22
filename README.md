@@ -104,7 +104,7 @@ open -- -weird-name.txt           # A target whose name starts with a dash
 | `-h`, `--help` | Show help |
 | `-V`, `--version` | Show version |
 | `--check-update` | Check if a newer version is available |
-| `--update` | Update to the latest version |
+| `--update` | Download the latest version and put it in place |
 | `--install-xdg` | Install an `xdg-open` shim so other programs route through winopen |
 | `--uninstall-xdg` | Remove the shim and restore any backup |
 
@@ -216,6 +216,26 @@ would race whatever is opening it. It is left in `/tmp` for the system to reap.
 | `WINOPEN_EDITOR` | The editor `-t` uses. Unset, `-t` asks Windows what handles `.txt`. `-e` ignores it. |
 | `WINOPEN_XDG` | Set to `0` to bypass the `xdg-open` shim for one command |
 
+## Updating
+
+`--check-update` asks GitHub what the latest release is. `--update` downloads
+it and puts it in place.
+
+If the installed `open` is not yours to write, `--update` does **not** ask for
+root, and does not tell you to re-run the whole command as root either — that
+would put the download under root too. It fetches and checks the new version as
+you, then hands you the single privileged step:
+
+```
+Downloaded 1.0.2 to /tmp/winopen-update-a1b2c3.
+/usr/local/bin/open is not writable by you, so the last step needs root:
+    sudo install -m 755 /tmp/winopen-update-a1b2c3 /usr/local/bin/open
+```
+
+Either way it checks that what arrived is actually the tool: an error page or a
+captive portal answers 200 with a body that would otherwise end up executable
+on your `PATH`.
+
 ## xdg-open integration
 
 By itself, `open` only helps when you type it. Links opened by other programs —
@@ -230,15 +250,20 @@ open --uninstall-xdg    # remove it, restoring anything it replaced
 Installing winopen does not install the shim. It is a separate, explicit step,
 and a separately reversible one.
 
-`/usr/local/bin` is not normally yours to write, so this needs `sudo`. Before
-asking for your password it tells you why, and names the exact commands root
-will run:
+`/usr/local/bin` is not normally yours to write. `open` will not become root
+for you — it says what it would do and leaves you to run it:
 
 ```
 /usr/local/bin is not writable by you, so this needs root.
-sudo will run:
+It would run:
     ln -s /usr/local/bin/open /usr/local/bin/xdg-open
+
+Nothing has been changed. Run it again as root:
+    sudo open --install-xdg
 ```
+
+Under `sudo` the directory simply is writable, so it goes ahead. Nothing in
+`open` invokes `sudo` itself.
 
 ### It shadows, it does not replace
 

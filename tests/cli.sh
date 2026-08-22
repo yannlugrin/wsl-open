@@ -258,4 +258,56 @@ assert_status 1
 assert_stderr "failed to check for updates"
 unstub_curl
 
+# --- --update never escalates either (#16) ---------------------------------
+
+it "updates in place when the file is writable"
+cp "$OPEN" "$WORK_DIR/updatable"
+sed -i 's/^VERSION=".*"$/VERSION="0.0.1"/' "$WORK_DIR/updatable"
+chmod 755 "$WORK_DIR/updatable"
+stub_curl update "9.9.9" "$OPEN"
+STDOUT="$(env -i HOME="$HOME" PATH="$STUB_DIR:/usr/bin:/bin" \
+  bash "$WORK_DIR/updatable" --update 2>"$STUB_DIR/stderr")"
+STATUS=$?
+STDERR="$(cat "$STUB_DIR/stderr")"
+assert_status 0
+assert_stdout "Updated successfully"
+
+it "prints one privileged command rather than escalating, when it cannot write"
+if is_root; then skip "running as root, every path is writable"; else
+  cp "$OPEN" "$WORK_DIR/locked"
+  sed -i 's/^VERSION=".*"$/VERSION="0.0.1"/' "$WORK_DIR/locked"
+  chmod 555 "$WORK_DIR/locked"
+  stub_curl update "9.9.9" "$OPEN"
+  STDOUT="$(env -i HOME="$HOME" PATH="$STUB_DIR:/usr/bin:/bin" \
+    bash "$WORK_DIR/locked" --update 2>"$STUB_DIR/stderr")"
+  STATUS=$?
+  STDERR="$(cat "$STUB_DIR/stderr")"
+  if [[ "$STATUS" == 1 && "$STDERR" == *"sudo install -m 755"* ]]; then ok; else
+    bad "expected the sudo command to be printed" "status=$STATUS stderr=$STDERR"; fi
+fi
+
+it "leaves the download in place, so the printed command has something to copy"
+if is_root; then skip "running as root"; else
+  file="$(sed -n 's/^Downloaded .* to \(.*\)\.$/\1/p' <<< "$STDERR")"
+  if [[ -n "$file" && -s "$file" ]]; then ok; else
+    bad "the file the command refers to is not there" "named: ${file:-<none>}"; fi
+  rm -f "$file"
+fi
+
+it "refuses a download that is not the tool"
+cp "$OPEN" "$WORK_DIR/target"
+sed -i 's/^VERSION=".*"$/VERSION="0.0.1"/' "$WORK_DIR/target"
+chmod 755 "$WORK_DIR/target"
+printf '<!DOCTYPE html><html>404</html>\n' > "$WORK_DIR/notatool"
+stub_curl update "9.9.9" "$WORK_DIR/notatool"
+STDOUT="$(env -i HOME="$HOME" PATH="$STUB_DIR:/usr/bin:/bin" \
+  bash "$WORK_DIR/target" --update 2>"$STUB_DIR/stderr")"
+STATUS=$?
+STDERR="$(cat "$STUB_DIR/stderr")"
+assert_status 1
+assert_stderr "does not look like winopen"
+if grep -q '^VERSION="0.0.1"' "$WORK_DIR/target"; then ok; else
+  bad "an error page replaced the tool"; fi
+unstub_curl
+
 summary

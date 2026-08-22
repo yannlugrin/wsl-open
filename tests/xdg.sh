@@ -126,4 +126,39 @@ run_open --install-xdg
 assert_status 1
 assert_stderr "refusing to overwrite an existing backup"
 
+# --- it never becomes root on your behalf (#16) ----------------------------
+
+# An earlier test leaves a backup behind on purpose; start from nothing.
+rm -f "$SHIM" "$SHIM.winopen-backup"
+
+it "prints the command instead of escalating, and changes nothing"
+if is_root; then skip "running as root, every path is writable"; else
+  chmod 555 "$PREFIX/bin"
+  run_open --install-xdg
+  chmod 755 "$PREFIX/bin"
+  if [[ "$STATUS" == 1 && "$STDERR" == *"needs root"* && "$STDERR" == *"sudo "* \
+        && ! -e "$SHIM" ]]; then ok; else
+    bad "expected a refusal that changed nothing" "status=$STATUS stderr=$STDERR"; fi
+fi
+
+it "names the invocation and the prefix, so the hint can be pasted"
+if is_root; then skip "running as root"; else
+  chmod 555 "$PREFIX/bin"
+  run_open --install-xdg
+  chmod 755 "$PREFIX/bin"
+  if [[ "$STDERR" == *"PREFIX=$PREFIX"* && "$STDERR" == *"--install-xdg"* ]]; then ok; else
+    bad "the sudo hint would not work if pasted" "$STDERR"; fi
+fi
+
+it "uninstall refuses the same way rather than escalating"
+if is_root; then skip "running as root"; else
+  run_open --install-xdg >/dev/null 2>&1
+  chmod 555 "$PREFIX/bin"
+  run_open --uninstall-xdg
+  chmod 755 "$PREFIX/bin"
+  if [[ "$STATUS" == 1 && "$STDERR" == *"needs root"* && -L "$SHIM" ]]; then ok; else
+    bad "expected a refusal leaving the shim in place" "status=$STATUS"; fi
+  run_open --uninstall-xdg >/dev/null 2>&1
+fi
+
 summary

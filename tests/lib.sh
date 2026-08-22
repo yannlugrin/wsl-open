@@ -49,9 +49,22 @@ stub_curl() {
   case "$1" in
     redirect) printf '#!/usr/bin/env bash\nprintf "%%s" "%s"\n' "$2" > "$STUB_DIR/curl" ;;
     fail)     printf '#!/usr/bin/env bash\nexit 6\n' > "$STUB_DIR/curl" ;;
+    # $2 the tag the redirect resolves to, $3 a file to serve as the download
+    update)
+      cat > "$STUB_DIR/curl" <<EOF
+#!/usr/bin/env bash
+case " \$* " in *" -fsI "*) printf 'https://github.com/x/y/releases/tag/$2'; exit 0 ;; esac
+out=""; prev=""
+for a in "\$@"; do [[ "\$prev" == "-o" ]] && out="\$a"; prev="\$a"; done
+cat "$3" > "\$out"
+EOF
+      ;;
   esac
   chmod +x "$STUB_DIR/curl"
 }
+
+# -w is always true for root, so the "this needs root" paths cannot be reached.
+is_root() { [[ "$(id -u)" == 0 ]]; }
 
 unstub_curl() { rm -f "$STUB_DIR/curl"; }
 

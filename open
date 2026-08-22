@@ -104,22 +104,38 @@ self_update() {
     exit 0
   fi
 
-  local self
+  local self url tmpfile
   self="$(realpath "$0")"
-  local url="https://raw.githubusercontent.com/$REPO/$latest/open"
-  local tmpfile
-  tmpfile="$(mktemp)"
+  url="https://raw.githubusercontent.com/$REPO/$latest/open"
+  tmpfile="$(mktemp /tmp/winopen-update-XXXXXX)"
 
   echo "Updating open $VERSION -> $latest..."
-  curl -fsSL "$url" -o "$tmpfile" 2>/dev/null || { rm -f "$tmpfile"; die "failed to download update"; }
+  curl -fsSL "$url" -o "$tmpfile" 2>/dev/null ||
+    { rm -f "$tmpfile"; die "failed to download update"; }
 
-  if [[ -w "$self" ]]; then
-    mv "$tmpfile" "$self"
-    chmod +x "$self"
-  else
-    sudo mv "$tmpfile" "$self"
-    sudo chmod +x "$self"
+  # A proxy or an error page answers 200 with a body that is not the tool, and
+  # this one ends up executable on PATH.
+  if ! { head -n 1 "$tmpfile" | grep -q '^#!.*sh'; } || ! grep -q '^VERSION=' "$tmpfile"; then
+    rm -f "$tmpfile"
+    die "what was downloaded does not look like winopen; nothing was changed"
   fi
+
+  # Deliberately not `sudo`-ing this ourselves, and deliberately not asking the
+  # user to re-run the whole command as root either: that would put the network
+  # fetch under root as well, which is the part worth keeping out of it. The
+  # download has already happened as this user, so what is left is one
+  # privileged copy, printed for them to run.
+  if [[ ! -w "$self" ]]; then
+    {
+      echo "Downloaded $latest to $tmpfile."
+      echo "$self is not writable by you, so the last step needs root:"
+      echo "    sudo install -m 755 $tmpfile $self"
+    } >&2
+    exit 1
+  fi
+
+  install -m 755 "$tmpfile" "$self"
+  rm -f "$tmpfile"
 
   echo "Updated successfully: $("$self" --version)"
 }
@@ -536,19 +552,37 @@ xdg_dest() {
 # the default on /usr/local. Naming the exact commands before the password
 # prompt rather than after is the difference between a considered yes and a
 # reflex one.
-announce_sudo() {
-  local bindir="$1"; shift
-  echo "$bindir is not writable by you, so this needs root."
-  echo "sudo will run:"
-  local cmd
-  for cmd in "$@"; do
-    echo "    $cmd"
-  done
-  echo
+# Root is never assumed. If the destination is not this user's to write, the
+# commands that would do it are printed and nothing happens.
+#
+# A tool run dozens of times a day should not be able to escalate on its own,
+# and re-running under sudo is not a worse experience -- it is the same
+# operation with the decision made by the person making it. Under sudo the
+# writability test simply passes and this never fires, so there is no second
+# code path.
+require_writable() {
+  local target="$1" flag="$2"; shift 2
+  [[ -w "$target" ]] && return 0
+
+  local prefix_hint=""
+  [[ -n "${PREFIX:-}" ]] && prefix_hint="PREFIX=$PREFIX "
+
+  {
+    echo "$target is not writable by you, so this needs root."
+    echo "It would run:"
+    local cmd
+    for cmd in "$@"; do
+      echo "    $cmd"
+    done
+    echo
+    echo "Nothing has been changed. Run it again as root:"
+    echo "    sudo ${prefix_hint}$0 $flag"
+  } >&2
+  exit 1
 }
 
 install_xdg() {
-  local dest self bindir sudo_cmd backup
+  local dest self bindir backup
   dest="$(xdg_dest)"
   bindir="$(dirname "$dest")"
   self="$(realpath "$0")"
@@ -569,22 +603,15 @@ install_xdg() {
     [[ -e "$backup" ]] && die "refusing to overwrite an existing backup: $backup"
   fi
 
-  sudo_cmd=""
-  if [[ ! -w "$bindir" ]]; then
-    sudo_cmd="sudo"
-    if [[ -n "$backup" ]]; then
-      announce_sudo "$bindir" "mv $dest $backup" "ln -s $self $dest"
-    else
-      announce_sudo "$bindir" "ln -s $self $dest"
-    fi
-  fi
-
   if [[ -n "$backup" ]]; then
+    require_writable "$bindir" --install-xdg "mv $dest $backup" "ln -s $self $dest"
     echo "Backing up $dest -> $backup"
-    $sudo_cmd mv "$dest" "$backup"
+    mv "$dest" "$backup"
+  else
+    require_writable "$bindir" --install-xdg "ln -s $self $dest"
   fi
 
-  $sudo_cmd ln -s "$self" "$dest"
+  ln -s "$self" "$dest"
   echo "Installed $dest -> $self"
   echo
   echo "Programs calling xdg-open now open things through Windows."
@@ -596,7 +623,7 @@ install_xdg() {
 }
 
 uninstall_xdg() {
-  local dest self bindir sudo_cmd backup
+  local dest self bindir backup
   dest="$(xdg_dest)"
   bindir="$(dirname "$dest")"
   self="$(realpath "$0")"
@@ -608,21 +635,17 @@ uninstall_xdg() {
   backup="$dest.winopen-backup"
   [[ -e "$backup" ]] || backup=""
 
-  sudo_cmd=""
-  if [[ ! -w "$bindir" ]]; then
-    sudo_cmd="sudo"
-    if [[ -n "$backup" ]]; then
-      announce_sudo "$bindir" "rm -f $dest" "mv $backup $dest"
-    else
-      announce_sudo "$bindir" "rm -f $dest"
-    fi
+  if [[ -n "$backup" ]]; then
+    require_writable "$bindir" --uninstall-xdg "rm -f $dest" "mv $backup $dest"
+  else
+    require_writable "$bindir" --uninstall-xdg "rm -f $dest"
   fi
 
-  $sudo_cmd rm -f "$dest"
+  rm -f "$dest"
   echo "Removed $dest"
 
   if [[ -n "$backup" ]]; then
-    $sudo_cmd mv "$backup" "$dest"
+    mv "$backup" "$dest"
     echo "Restored $dest from $backup"
   fi
 }
