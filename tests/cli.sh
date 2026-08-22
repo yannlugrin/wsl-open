@@ -230,4 +230,32 @@ if grep -q 'chrome.exe' "$DISPATCH_LOG"; then ok; else
   bad "expected chrome.exe, got: $(cat "$DISPATCH_LOG")"; fi
 rm -f /tmp/winopen-*.txt
 
+# --- the update check (#15) -----------------------------------------------
+
+it "reads the tag from the releases/latest redirect"
+stub_curl redirect "https://github.com/yannlugrin/winopen/releases/tag/9.9.9"
+run_open --check-update
+assert_status 0
+assert_stdout "Latest version: 9.9.9"
+
+it "says it is up to date when the tag matches"
+version="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' "$OPEN")"
+stub_curl redirect "https://github.com/yannlugrin/winopen/releases/tag/$version"
+run_open --check-update
+assert_status 0
+assert_stdout "up to date"
+
+it "refuses to read 'releases' as a tag when there are no releases"
+stub_curl redirect "https://github.com/yannlugrin/winopen/releases"
+run_open --check-update
+assert_status 1
+assert_stderr "no releases found"
+
+it "reports a failure to reach GitHub"
+stub_curl fail
+run_open --check-update
+assert_status 1
+assert_stderr "failed to check for updates"
+unstub_curl
+
 summary

@@ -62,11 +62,21 @@ Exit codes: 0 success, 1 command line syntax, 2 file did not exist,
 EOF
 }
 
+# The releases/latest page redirects to the tag it resolves to, which answers
+# the same question as the API without its 60-requests-an-hour limit for
+# unauthenticated callers, and without parsing JSON with grep.
 fetch_latest_version() {
-  local url="https://api.github.com/repos/$REPO/releases/latest"
-  local response
-  response="$(curl -fsSL "$url" 2>/dev/null)" || die "failed to check for updates"
-  echo "$response" | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4
+  local url
+  url="$(curl -fsI -o /dev/null -w '%{redirect_url}' \
+    "https://github.com/$REPO/releases/latest" 2>/dev/null)" ||
+    die "failed to check for updates"
+
+  # A repository with no releases redirects to the releases page itself, and
+  # its last path component is "releases" -- which would pass for a tag name
+  # and be wrong.
+  [[ "$url" == */releases/tag/* ]] || die "no releases found for $REPO"
+
+  printf '%s\n' "${url##*/}"
 }
 
 check_update() {

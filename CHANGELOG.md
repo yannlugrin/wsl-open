@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The update check uses the `releases/latest` redirect** instead of the
+  GitHub API. The unauthenticated API is limited to 60 requests an hour per IP,
+  and the tag was being extracted from JSON with `grep`. A repository with no
+  releases redirects to the releases page rather than to a tag, which is
+  detected rather than reported as a release named "releases".
+
 - **The task runner is now [`just`](https://github.com/casey/just)**, was
   `make`. Installing from source does not require it — the README leads with
   the plain `install -m 755` command, since that is the whole install. Pass a

@@ -42,6 +42,19 @@ EOF
   mkdir -p "$WORK_DIR/dir"
 }
 
+# The update check asks GitHub what the latest release is. Stubbing curl keeps
+# the suite hermetic -- no network, no rate limit, and the failure modes become
+# reachable on demand.
+stub_curl() {
+  case "$1" in
+    redirect) printf '#!/usr/bin/env bash\nprintf "%%s" "%s"\n' "$2" > "$STUB_DIR/curl" ;;
+    fail)     printf '#!/usr/bin/env bash\nexit 6\n' > "$STUB_DIR/curl" ;;
+  esac
+  chmod +x "$STUB_DIR/curl"
+}
+
+unstub_curl() { rm -f "$STUB_DIR/curl"; }
+
 teardown_stubs() {
   [[ -n "${STUB_DIR:-}" ]] && rm -rf "$STUB_DIR"
   [[ -n "${WORK_DIR:-}" ]] && rm -rf "$WORK_DIR"
