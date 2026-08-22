@@ -56,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   privileged copy, so the network fetch never runs as root.
 - **`--update` checks what it downloaded** is actually the tool before
   replacing anything, as `install.sh` now does.
+- **Releases ship a tarball and `SHA256SUMS`**, built by `just dist` and
+  published by a workflow that first runs the tests and asserts the `VERSION`
+  constant matches the tag. `install.sh` prefers the assets and verifies the
+  checksum, because a tag can be moved with `git tag -f` and
+  `raw.githubusercontent.com` follows it. Releases published before the assets
+  existed still install, from the tagged script, so older pins keep working.
 - **The install is atomic.** `install.sh` piped `curl` straight at
   `$PREFIX/bin/open`, so a dropped connection left a truncated file on `PATH`
   under the name `open` — verified: it replaced a working install with 20 lines

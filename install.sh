@@ -19,8 +19,6 @@ if [[ "$VERSION" == "latest" ]]; then
   esac
 fi
 
-URL="https://raw.githubusercontent.com/$REPO/$VERSION/open"
-
 echo "Installing winopen $VERSION to $DEST..."
 
 sudo_cmd=""
@@ -31,34 +29,64 @@ fi
 $sudo_cmd mkdir -p "$PREFIX/bin"
 
 staged=""
-tmpfile="$(mktemp)"
+workdir="$(mktemp -d)"
 cleanup() {
-  rm -f "$tmpfile"
+  rm -rf "$workdir"
   [[ -n "$staged" ]] && $sudo_cmd rm -f "$staged"
   return 0
 }
 trap cleanup EXIT
 
-# Downloaded whole before anything is replaced. Piping curl straight at the
-# destination meant a dropped connection left a truncated file on PATH under
-# the name `open` -- verified: it replaced a working install with 20 lines that
-# would not run.
-curl -fsSL "$URL" -o "$tmpfile" || {
-  echo "Download failed; nothing was changed." >&2
-  exit 1
-}
+asset="winopen-${VERSION}.tar.gz"
+base="https://github.com/$REPO/releases/download/$VERSION"
+source_file=""
+
+# Release assets are the intended mechanism: a tag can be moved with `git tag
+# -f`, and raw.githubusercontent.com follows it, so the same URL can serve
+# different content over time. An asset cannot be replaced without it showing.
+if curl -fsSL "$base/$asset" -o "$workdir/$asset" 2>/dev/null; then
+  curl -fsSL "$base/SHA256SUMS" -o "$workdir/SHA256SUMS" || {
+    echo "The release has a tarball but no SHA256SUMS; nothing was changed." >&2
+    exit 1
+  }
+
+  # --ignore-missing so a SHA256SUMS listing several assets still verifies when
+  # only one of them was downloaded.
+  ( cd "$workdir" && sha256sum --ignore-missing -c SHA256SUMS >/dev/null ) || {
+    echo "Checksum mismatch for $asset; nothing was changed." >&2
+    exit 1
+  }
+
+  tar -xzf "$workdir/$asset" -C "$workdir" || {
+    echo "Could not unpack $asset; nothing was changed." >&2
+    exit 1
+  }
+  source_file="$workdir/winopen-${VERSION}/open"
+else
+  # Releases made before the tarball existed have no assets at all. Falling
+  # back keeps `VERSION=1.0.1` installable rather than breaking older pins.
+  echo "No release assets for $VERSION; falling back to the tagged script." >&2
+  curl -fsSL "https://raw.githubusercontent.com/$REPO/$VERSION/open" \
+    -o "$workdir/open" || {
+    echo "Download failed; nothing was changed." >&2
+    exit 1
+  }
+  source_file="$workdir/open"
+fi
 
 # A proxy or an error page returns 200 with a body that is not the tool.
-head -n 1 "$tmpfile" | grep -q '^#!.*sh' && grep -q '^VERSION=' "$tmpfile" || {
+if [[ ! -f "$source_file" ]] ||
+   ! { head -n 1 "$source_file" | grep -q '^#!.*sh'; } ||
+   ! grep -q '^VERSION=' "$source_file"; then
   echo "What was downloaded does not look like winopen; nothing was changed." >&2
   exit 1
-}
+fi
 
 # Staged beside the destination so the last step is a rename within one
 # filesystem, which either happens or does not. Installing over the top can
 # still truncate if it is interrupted.
 staged="$PREFIX/bin/.open.$$"
-$sudo_cmd install -m 755 "$tmpfile" "$staged"
+$sudo_cmd install -m 755 "$source_file" "$staged"
 $sudo_cmd mv -f "$staged" "$DEST"
 staged=""
 

@@ -65,6 +65,23 @@ install:
 uninstall:
     rm -f {{prefix}}/bin/open
 
+# Build the release tarball and its checksum into dist/
+dist:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' open)"
+    name="winopen-${version}"
+    rm -rf dist
+    mkdir -p "dist/${name}"
+    # What someone needs to install and to know what they installed. install.sh
+    # is not in here: it is fetched from the repository, not from the tarball.
+    cp open README.md CHANGELOG.md LICENSE "dist/${name}/"
+    tar -czf "dist/${name}.tar.gz" -C dist "${name}"
+    rm -rf "dist/${name}"
+    ( cd dist && sha256sum "${name}.tar.gz" > SHA256SUMS )
+    ls -l dist
+    cat dist/SHA256SUMS
+
 # Assert the VERSION constant matches a tag, for the release workflow
 check-version tag:
     #!/usr/bin/env bash

@@ -12,29 +12,59 @@ source ./lib.sh
 INSTALLER="$(cd .. && pwd)/install.sh"
 setup_stubs
 PREFIX_DIR="$(mktemp -d)"
-trap 'teardown_stubs; rm -rf "$PREFIX_DIR"' EXIT
+trap 'teardown_stubs; rm -rf "$PREFIX_DIR" "${FIXTURE:-}"' EXIT
 
-# Honours -o, like the real thing. MODE picks what goes wrong.
+# A real tarball and checksum, so the verification path is exercised rather
+# than mocked past.
+FIXTURE="$(mktemp -d)"
+mkdir -p "$FIXTURE/winopen-1.0.1"
+cp "$OPEN" "$FIXTURE/winopen-1.0.1/open"
+tar -czf "$FIXTURE/winopen-1.0.1.tar.gz" -C "$FIXTURE" winopen-1.0.1
+( cd "$FIXTURE" && sha256sum winopen-1.0.1.tar.gz > SHA256SUMS )
+printf 'deadbeef  winopen-1.0.1.tar.gz\n' > "$FIXTURE/SHA256SUMS.bad"
+printf '<!DOCTYPE html><html>404</html>\n' > "$FIXTURE/notatool"
+
+# Serves the release assets or the raw script, depending on MODE. Honours -o,
+# like the real thing.
 cat > "$STUB_DIR/curl" <<EOF
 #!/usr/bin/env bash
-out=""; prev=""
-for a in "\$@"; do [[ "\$prev" == "-o" ]] && out="\$a"; prev="\$a"; done
-# The redirect that resolves the tag. MODE decides what it resolves to, so
-# the no-releases case has to be answered here rather than below.
+url=""; out=""; prev=""
+for a in "\$@"; do
+  [[ "\$prev" == "-o" ]] && out="\$a"
+  case "\$a" in http*) url="\$a" ;; esac
+  prev="\$a"
+done
+
 case " \$* " in
   *" -fsI "*)
-    if [[ "\${MODE:-ok}" == noreleases ]]; then
+    if [[ "\${MODE:-assets}" == noreleases ]]; then
       printf 'https://github.com/x/y/releases'
     else
       printf 'https://github.com/x/y/releases/tag/1.0.1'
     fi
     exit 0 ;;
 esac
-case "\${MODE:-ok}" in
-  truncated) head -20 "$OPEN" > "\$out"; exit 18 ;;
-  htmlerror) printf '<!DOCTYPE html><html>404</html>\n' > "\$out"; exit 0 ;;
-  *)         cat "$OPEN" > "\$out"; exit 0 ;;
+
+case "\$url" in
+  *winopen-1.0.1.tar.gz)
+    case "\${MODE:-assets}" in
+      noassets|truncated|htmlerror) exit 22 ;;
+      *) cp "$FIXTURE/winopen-1.0.1.tar.gz" "\$out"; exit 0 ;;
+    esac ;;
+  *SHA256SUMS)
+    case "\${MODE:-assets}" in
+      nosums) exit 22 ;;
+      badsum) cp "$FIXTURE/SHA256SUMS.bad" "\$out"; exit 0 ;;
+      *) cp "$FIXTURE/SHA256SUMS" "\$out"; exit 0 ;;
+    esac ;;
+  *raw.githubusercontent.com*)
+    case "\${MODE:-assets}" in
+      truncated) head -20 "$OPEN" > "\$out"; exit 18 ;;
+      htmlerror) cp "$FIXTURE/notatool" "\$out"; exit 0 ;;
+      *) cp "$OPEN" "\$out"; exit 0 ;;
+    esac ;;
 esac
+exit 22
 EOF
 chmod +x "$STUB_DIR/curl"
 
@@ -58,12 +88,29 @@ run_installer() {
 
 printf 'install.sh\n'
 
-it "installs when the download succeeds"
-run_installer ok
+it "installs from the release tarball when there is one"
+run_installer assets
 assert_status 0
 if [[ "$INSTALLED" == open* ]]; then ok; else bad "expected the tool, got: $INSTALLED"; fi
 
-it "leaves the previous install alone when the download is cut short"
+it "refuses a tarball whose checksum does not match"
+run_installer badsum
+assert_status 1
+assert_stderr "Checksum mismatch"
+if [[ "$INSTALLED" == *PREVIOUS* ]]; then ok; else bad "it installed anyway"; fi
+
+it "refuses a release that has a tarball but no SHA256SUMS"
+run_installer nosums
+assert_status 1
+assert_stderr "no SHA256SUMS"
+
+it "falls back to the tagged script for releases published without assets"
+run_installer noassets
+assert_status 0
+assert_stderr "falling back"
+if [[ "$INSTALLED" == open* ]]; then ok; else bad "the fallback did not install"; fi
+
+it "leaves the previous install alone when the fallback is cut short"
 run_installer truncated
 assert_status 1
 assert_stderr "nothing was changed"
@@ -82,7 +129,7 @@ assert_status 1
 assert_stderr "No releases found"
 
 it "leaves no staging files behind, whatever happened"
-for mode in ok truncated htmlerror; do
+for mode in assets badsum nosums noassets truncated htmlerror; do
   run_installer "$mode"
   if [[ "$LEFTOVERS" == "open " ]]; then :; else
     bad "MODE=$mode left: $LEFTOVERS"; break

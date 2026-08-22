@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install shellcheck
+        run: |
+          version="$(just shellcheck-version)"
+          url="https://github.com/koalaman/shellcheck/releases/download/v${version}/shellcheck-v${version}.linux.x86_64.tar.xz"
+          curl -fsSL "$url" | tar -xJ
+          sudo install -m 755 "shellcheck-v${version}/shellcheck" /usr/local/bin/shellcheck
+
+      # Before anything is published, not after.
+      - name: Check
+        run: just check
+
+      # A tag is a claim about what the script says its version is. If they
+      # disagree, the release would ship a build that reports the wrong version
+      # for the rest of its life.
+      - name: Assert VERSION matches the tag
+        run: just check-version "${GITHUB_REF_NAME}"
+
+      - name: Build the release assets
+        run: just dist
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md)." \
+            dist/winopen-*.tar.gz \
+            dist/SHA256SUMS

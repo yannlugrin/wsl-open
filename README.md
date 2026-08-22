@@ -216,6 +216,23 @@ would race whatever is opening it. It is left in `/tmp` for the system to reap.
 | `WINOPEN_EDITOR` | The editor `-t` uses. Unset, `-t` asks Windows what handles `.txt`. `-e` ignores it. |
 | `WINOPEN_XDG` | Set to `0` to bypass the `xdg-open` shim for one command |
 
+### What the checksum does and does not buy
+
+The installer verifies the tarball against a `SHA256SUMS` published in the same
+release. That protects against a truncated download or a mis-published asset —
+integrity against accident. It does **not** protect against a compromised
+source: whoever could replace the tarball could replace the checksum beside it,
+and both arrive over the same connection from the same host.
+
+Where it genuinely pays off is letting you pin. A dotfiles repository can
+record a version and its SHA and refuse anything else:
+
+```bash
+sha256sum -c <<< "8f423d...  winopen-1.0.1.tar.gz"
+```
+
+Real integrity is signing, which is a separate question and not answered here.
+
 ## Updating
 
 `--check-update` asks GitHub what the latest release is. `--update` downloads
