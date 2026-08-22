@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      # Pinned rather than apt's, whose version follows the runner image: a
+      # finding that appears only in CI is worse than no finding. The justfile
+      # holds the version so there is one place to change it.
+      - name: Install shellcheck
+        run: |
+          version="$(just shellcheck-version)"
+          url="https://github.com/koalaman/shellcheck/releases/download/v${version}/shellcheck-v${version}.linux.x86_64.tar.xz"
+          curl -fsSL "$url" | tar -xJ
+          sudo install -m 755 "shellcheck-v${version}/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version
+
+      - name: Lint
+        run: just lint
+
+      # No WSL here, and there never will be: the suite stubs wslpath, cmd.exe
+      # and explorer.exe, so it asserts the command line the tool builds rather
+      # than what Windows does with it. tests/windows.sh covers the rest, by
+      # hand, on a real machine.
+      - name: Test
+        run: just test

@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+#
+# Runs `just check` before anything leaves the machine. About a second.
+#
+# pre-push rather than pre-commit deliberately: it fires when work is about to
+# become public, and leaves work-in-progress commits alone.
+#
+# Enable with `just hooks`. Bypass once with `git push --no-verify`.
+
+if ! command -v just >/dev/null 2>&1; then
+    echo "pre-push: just is not installed, skipping checks" >&2
+    exit 0
+fi
+
+exec just check

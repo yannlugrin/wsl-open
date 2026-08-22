@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A test suite and CI.** `tests/cli.sh` and `tests/xdg.sh` stub `wslpath`,
+  `cmd.exe` and `explorer.exe` and assert the command line the tool builds, so
+  they run on any Linux machine including CI. `tests/windows.sh` covers what
+  only a real WSL machine can answer — whether Windows actually opened
+  anything — and is run by hand before a release.
+
+- **A `pre-push` hook**, installed with `just hooks`, running the same checks
+  CI does. CI pins the shellcheck version so a finding cannot appear there and
+  nowhere else.
+
+### Changed
+
+- **The task runner is now [`just`](https://github.com/casey/just)**, was
+  `make`. Installing from source does not require it — the README leads with
+  the plain `install -m 755` command, since that is the whole install. Pass a
+  prefix as an argument (`just prefix=~/.local install`) rather than through
+  the environment: `sudo` resets the environment, so `sudo PREFIX=... just
+  install` can quietly install to `/usr/local` instead.
+
+### Added
+
 - **A "Parity with macOS `open(1)`" section in the README**, listing what is
   supported, what is not and why, and every deliberate deviation — so parity
   claims are honest and a deliberate omission is not mistaken for a bug.

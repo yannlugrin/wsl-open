@@ -33,20 +33,30 @@ PREFIX=~/.local curl -fsSL https://raw.githubusercontent.com/yannlugrin/winopen/
 ```bash
 git clone https://github.com/yannlugrin/winopen.git
 cd winopen
-sudo make install
+sudo install -m 755 open /usr/local/bin/open
 ```
 
-To uninstall:
+That is the whole install — one file on your `PATH`. To remove it, delete it.
+
+With [`just`](https://github.com/casey/just), which the project uses as its
+task runner:
 
 ```bash
-sudo make uninstall
+sudo just install
+sudo just uninstall
 ```
 
-To install to a custom prefix (no sudo needed):
+To install somewhere else, pass the prefix **as an argument**, not through the
+environment — `sudo` resets the environment, so `sudo PREFIX=... just install`
+may quietly install to `/usr/local` anyway:
 
 ```bash
-make install PREFIX=~/.local
+just prefix=~/.local install      # no sudo needed
+sudo just prefix=/opt install
 ```
+
+If you installed the `xdg-open` shim, remove it with `open --uninstall-xdg`
+before uninstalling the tool, while `open` is still there to do it.
 
 ## Usage
 
@@ -356,6 +366,46 @@ failed"), because Windows does not report whether the action succeeded.
 
 - WSL (Windows Subsystem for Linux)
 - `wslpath` (built into WSL)
+
+## Development
+
+```bash
+just            # list the recipes
+just check      # what CI runs: lint and tests, about a second
+just test       # the suite that runs anywhere
+just lint       # bash -n and shellcheck
+just hooks      # run `just check` before every push
+```
+
+`just hooks` installs a `pre-push` hook, so the checks run when work is about
+to become public rather than on every work-in-progress commit. `git push
+--no-verify` skips it once, `just unhooks` removes it.
+
+Linting needs [shellcheck](https://github.com/koalaman/shellcheck) — your
+package manager has it, or take a static binary from its releases page. Without
+it `just lint` still runs the syntax checks and says what it skipped. CI pins
+the version (`just shellcheck-version`), so a finding cannot appear there and
+nowhere else.
+
+Tests come in two halves, because only one of them can be automated.
+
+`tests/cli.sh` and `tests/xdg.sh` run **anywhere**, including a Linux CI runner
+with no WSL at all. They put stubs for `wslpath`, `cmd.exe` and `explorer.exe`
+first on a scrubbed `PATH` and assert the exact command line the tool builds,
+along with its exit status.
+
+`tests/windows.sh` needs a **real WSL machine** and is run by hand before a
+release:
+
+```bash
+just test-windows
+```
+
+It exists because the interesting failures here are invisible from an exit
+code. `cmd.exe /C start` returns 0 for a scheme nothing has registered,
+`explorer.exe` returns 1 when it succeeded, and `ShellExecuteEx` reports
+success while opening nothing at all. Only looking at the result catches those,
+so that suite opens real windows and leaves them for you to check.
 
 ## License
 
