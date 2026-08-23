@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Installing to a prefix that does not exist yet asked for root.** The
+  installer tested whether `$PREFIX/bin` was writable, which is false when it
+  has not been created, so `PREFIX=~/somewhere-new` demanded a password to
+  write somewhere the user already owned. It now asks about the nearest
+  directory that exists.
+
 ## [1.1.0] - 2026-08-23
 
 If you are upgrading, these change behaviour you may be relying on:

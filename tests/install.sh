@@ -141,6 +141,16 @@ run_installer noreleases
 assert_status 1
 assert_stderr "No releases found"
 
+it "installs to a prefix that does not exist yet, without asking for root"
+rm -rf "${PREFIX_DIR:?}/fresh"
+STDOUT="$(env -i HOME="$HOME" PATH="$STUB_DIR:/usr/bin:/bin" \
+  MODE=assets PREFIX="$PREFIX_DIR/fresh/deep" bash "$INSTALLER" 2>"$STUB_DIR/stderr")"
+STATUS=$?
+STDERR="$(cat "$STUB_DIR/stderr")"
+if [[ "$STATUS" == 0 && -x "$PREFIX_DIR/fresh/deep/bin/open" ]]; then ok; else
+  bad "a fresh, user-owned prefix should not need root" "status=$STATUS stderr=$STDERR"; fi
+rm -rf "$PREFIX_DIR/fresh"
+
 it "leaves no staging files behind, whatever happened"
 for mode in assets badsum nosums noassets truncated htmlerror; do
   run_installer "$mode"

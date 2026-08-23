@@ -21,8 +21,17 @@ fi
 
 echo "Installing winopen $VERSION to $DEST..."
 
+# Whether root is needed is a question about the nearest directory that exists,
+# not about $PREFIX/bin: on a fresh prefix that directory has not been created
+# yet, so testing it directly asks for a password to write somewhere the user
+# already owns.
+probe="$PREFIX/bin"
+while [[ ! -e "$probe" && "$probe" != "/" && "$probe" != "." ]]; do
+  probe="$(dirname "$probe")"
+done
+
 sudo_cmd=""
-if [[ ! -w "$PREFIX/bin" ]]; then
+if [[ ! -w "$probe" ]]; then
   sudo_cmd="sudo"
 fi
 
