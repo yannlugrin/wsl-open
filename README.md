@@ -215,6 +215,37 @@ would race whatever is opening it. It is left in `/tmp` for the system to reap.
 |----------|-------------|
 | `WINOPEN_EDITOR` | The editor `-t` uses. Unset, `-t` asks Windows what handles `.txt`. `-e` ignores it. |
 | `WINOPEN_XDG` | Set to `0` to bypass the `xdg-open` shim for one command |
+| `WINOPEN_DESKTOP` | Set to `0` to hand URLs straight to Windows, ignoring virtual desktops |
+
+## URLs open where you are looking
+
+Windows hands a URL to the browser that is already running, which opens it in
+whichever of its windows was **last active** — on whatever virtual desktop that
+window happens to be. So the tab lands somewhere you cannot see, or Windows
+drags your view across to follow it.
+
+winopen raises a browser window that is already on the desktop in view and then
+hands over the URL, because a browser opens a URL in its last active window and
+activating one is what makes it that. With no window here to raise, it opens a
+new one, which Windows always places on the desktop in view.
+
+Nothing else needs doing — it is what `open https://example.com` does. It costs
+about 300ms more than handing the URL straight to Windows, and it steps aside
+whenever it cannot do better:
+
+| | |
+|---|---|
+| `-a`, `-n`, `-W`, `--args` | you have said what you want; the URL goes to Windows |
+| `WINOPEN_DESKTOP=0` | turns it off for one command |
+| no `powershell.exe`, or no helper installed | falls back silently |
+| a browser it has no window flag for | falls back silently |
+
+The helper lives in `$PREFIX/libexec/winopen/`, not on your `PATH`. A
+single-file install has no helper and simply does without this.
+
+**Known limitation:** if the topmost browser window on your desktop is a PWA or
+app window rather than a tabbed one, the browser may still route the tab to a
+tabbed window elsewhere.
 
 ### What the checksum does and does not buy
 

@@ -58,12 +58,15 @@ test-windows:
 
 # Install the tool. Override with `just prefix=~/.local install`.
 install:
-    install -d {{prefix}}/bin
+    install -d {{prefix}}/bin {{prefix}}/libexec/winopen
+    install -m 644 libexec/open-url.ps1 {{prefix}}/libexec/winopen/open-url.ps1
     install -m 755 open {{prefix}}/bin/open
 
 # Remove the tool. Run `open --uninstall-xdg` first if you installed the shim.
 uninstall:
     rm -f {{prefix}}/bin/open
+    rm -f {{prefix}}/libexec/winopen/open-url.ps1
+    -rmdir {{prefix}}/libexec/winopen
 
 # Build the release tarball and its checksum into dist/
 dist:
@@ -76,6 +79,8 @@ dist:
     # What someone needs to install and to know what they installed. install.sh
     # is not in here: it is fetched from the repository, not from the tarball.
     cp open README.md CHANGELOG.md LICENSE "dist/${name}/"
+    mkdir -p "dist/${name}/libexec"
+    cp libexec/open-url.ps1 "dist/${name}/libexec/"
     tar -czf "dist/${name}.tar.gz" -C dist "${name}"
     rm -rf "dist/${name}"
     ( cd dist && sha256sum "${name}.tar.gz" > SHA256SUMS )

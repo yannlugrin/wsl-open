@@ -230,6 +230,61 @@ if grep -q 'chrome.exe' "$DISPATCH_LOG"; then ok; else
   bad "expected chrome.exe, got: $(cat "$DISPATCH_LOG")"; fi
 rm -f /tmp/winopen-*.txt
 
+# --- keeping a URL on the desktop in view (#13) ----------------------------
+
+stub_powershell
+
+it "a plain URL goes through the helper"
+run_open "https://example.com"
+assert_status 0
+if [[ "$DISPATCH" == *powershell.exe*open-url.ps1* ]]; then ok; else
+  bad "expected the helper to run" "got: ${DISPATCH:-<nothing>}"; fi
+
+it "and the helper is given the URL"
+if [[ "$DISPATCH" == *"-Url https://example.com"* ]]; then ok; else
+  bad "the URL did not reach the helper" "got: $DISPATCH"; fi
+
+it "-a names the application, so the helper is not consulted"
+run_open -a chrome.exe "https://example.com"
+assert_status 0
+assert_dispatch "cmd.exe /C start  chrome.exe https://example.com"
+
+it "-n is asking for a new window, which is the opposite of reuse"
+run_open -n -a chrome.exe "https://example.com"
+assert_status 0
+assert_dispatch "cmd.exe /C start  chrome.exe --new-window https://example.com"
+
+it "-W wants to wait, which the helper cannot do"
+run_open -W "https://example.com"
+assert_status 0
+assert_dispatch "cmd.exe /C start  /WAIT https://example.com"
+
+it "--args would be dropped by the helper, so it is skipped"
+run_open "https://example.com" --args --flag
+assert_status 0
+assert_dispatch "cmd.exe /C start  https://example.com --flag"
+
+it "WINOPEN_DESKTOP=0 turns it off"
+WINOPEN_DESKTOP=0 run_open "https://example.com"
+unset WINOPEN_DESKTOP
+assert_status 0
+assert_dispatch "cmd.exe /C start  https://example.com"
+
+it "falls back to the plain handler when the helper cannot improve on it"
+POWERSHELL_EXIT=1 run_open "https://example.com"
+unset POWERSHELL_EXIT
+assert_status 0
+if [[ "$DISPATCH" == *"cmd.exe /C start  https://example.com"* ]]; then ok; else
+  bad "expected a fall back to start" "got: $DISPATCH"; fi
+
+it "a file is not a URL, so the helper is never involved"
+run_open "$WORK_DIR/file.txt"
+assert_status 0
+if [[ "$DISPATCH" != *powershell.exe* ]]; then ok; else
+  bad "the helper ran for a file" "$DISPATCH"; fi
+
+unstub_powershell
+
 # --- the update check (#15) -----------------------------------------------
 
 it "reads the tag from the releases/latest redirect"

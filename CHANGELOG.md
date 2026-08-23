@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **URLs open on the virtual desktop you are looking at.** Windows gives a URL
+  to the running browser, which opens it in whichever of its windows was last
+  active — on whatever desktop that window sits, so the tab lands out of sight
+  or drags your view across to follow it. winopen now raises a browser window
+  already on the desktop in view before handing over the URL, and opens a new
+  window when there is none. It steps aside for `-a`, `-n`, `-W` and `--args`,
+  for `WINOPEN_DESKTOP=0`, and whenever it cannot do better than Windows would.
+
 - **A test suite and CI.** `tests/cli.sh` and `tests/xdg.sh` stub `wslpath`,
   `cmd.exe` and `explorer.exe` and assert the command line the tool builds, so
   they run on any Linux machine including CI. `tests/windows.sh` covers what

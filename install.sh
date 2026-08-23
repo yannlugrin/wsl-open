@@ -29,6 +29,7 @@ fi
 $sudo_cmd mkdir -p "$PREFIX/bin"
 
 staged=""
+helper_file=""
 workdir="$(mktemp -d)"
 cleanup() {
   rm -rf "$workdir"
@@ -62,6 +63,7 @@ if curl -fsSL "$base/$asset" -o "$workdir/$asset" 2>/dev/null; then
     exit 1
   }
   source_file="$workdir/winopen-${VERSION}/open"
+  helper_file="$workdir/winopen-${VERSION}/libexec/open-url.ps1"
 else
   # Releases made before the tarball existed have no assets at all. Falling
   # back keeps `VERSION=1.0.1` installable rather than breaking older pins.
@@ -80,6 +82,14 @@ if [[ ! -f "$source_file" ]] ||
    ! grep -q '^VERSION=' "$source_file"; then
   echo "What was downloaded does not look like winopen; nothing was changed." >&2
   exit 1
+fi
+
+# The PowerShell helper that keeps a URL's tab on the desktop in view. Optional:
+# `open` works without it, just without that. Only the tarball carries it, so a
+# fallback install simply has none.
+if [[ -n "$helper_file" && -f "$helper_file" ]]; then
+  $sudo_cmd mkdir -p "$PREFIX/libexec/winopen"
+  $sudo_cmd install -m 644 "$helper_file" "$PREFIX/libexec/winopen/open-url.ps1"
 fi
 
 # Staged beside the destination so the last step is a rename within one

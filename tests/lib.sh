@@ -42,6 +42,20 @@ EOF
   mkdir -p "$WORK_DIR/dir"
 }
 
+# The helper that keeps a URL's tab on the desktop in view runs under
+# powershell.exe. Stubbing it makes visible both that the helper was reached and
+# what it was asked to do -- and MODE=fail exercises the fall-back.
+stub_powershell() {
+  cat > "$STUB_DIR/powershell.exe" <<EOF
+#!/usr/bin/env bash
+printf 'powershell.exe %s\n' "\$*" >> "$DISPATCH_LOG"
+exit \${POWERSHELL_EXIT:-0}
+EOF
+  chmod +x "$STUB_DIR/powershell.exe"
+}
+
+unstub_powershell() { rm -f "$STUB_DIR/powershell.exe"; }
+
 # The update check asks GitHub what the latest release is. Stubbing curl keeps
 # the suite hermetic -- no network, no rate limit, and the failure modes become
 # reachable on demand.
@@ -83,6 +97,8 @@ run_open() {
     PATH="$STUB_DIR:/usr/bin:/bin" \
     ${WINOPEN_EDITOR+WINOPEN_EDITOR="$WINOPEN_EDITOR"} \
     ${PREFIX+PREFIX="$PREFIX"} \
+    ${WINOPEN_DESKTOP+WINOPEN_DESKTOP="$WINOPEN_DESKTOP"} \
+    ${POWERSHELL_EXIT+POWERSHELL_EXIT="$POWERSHELL_EXIT"} \
     bash "$OPEN" "$@" 2>"$STUB_DIR/stderr")"
   STATUS=$?
   STDERR="$(cat "$STUB_DIR/stderr")"

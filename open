@@ -209,6 +209,40 @@ warn_no_new_instance() {
   fi
 }
 
+# The PowerShell helper that keeps a URL's tab on the desktop in view. Beside
+# the tool when installed, in the source tree when run from a clone. Absent --
+# a single-file install, or a release from before it existed -- everything still
+# works, just without this.
+winopen_libexec() {
+  local dir candidate
+  dir="$(dirname "$(realpath "$0")")"
+  for candidate in "$dir/../libexec/winopen/open-url.ps1" "$dir/libexec/open-url.ps1"; do
+    if [[ -r "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Windows gives a URL to the running browser, which opens it in whichever of
+# its windows was last active -- on whatever desktop that window happens to be.
+# So the tab lands out of sight, or the view is dragged across to follow it.
+#
+# Returns non-zero for anything it cannot improve on: no PowerShell, no helper,
+# an unknown scheme, or a browser it has no window flag for. The caller then
+# does what it would have done anyway.
+open_url_on_current_desktop() {
+  local url="$1" helper
+
+  [[ "${WINOPEN_DESKTOP:-1}" != "0" ]] || return 1
+  command -v powershell.exe >/dev/null 2>&1 || return 1
+  helper="$(winopen_libexec)" || return 1
+
+  powershell.exe -NoProfile -ExecutionPolicy Bypass \
+    -File "$(wslpath -aw "$helper")" -Url "$url" >/dev/null 2>&1
+}
+
 # ShellExecuteEx, for the one thing `start` cannot express: opening a file with
 # a class other than its own extension, which is what -t needs -- whatever
 # handles .txt, not whatever handles this file.
@@ -477,6 +511,16 @@ open_target() {
       opener="$resolved"
     else
       warn "-n: no new-instance flag known for ${resolved##*/}; opening normally, which may reuse a running window"
+    fi
+  fi
+
+  # A plain URL, with nothing else asked for, is the case worth improving: -a
+  # names the application already, -n is asking for a new window rather than
+  # reuse, and -W wants to wait for something this cannot wait on.
+  if $url_target && [[ -z "$opener" ]] && ! $flag_new && ! $flag_wait &&
+     [[ ${#app_args[@]} -eq 0 ]]; then
+    if open_url_on_current_desktop "$addressed"; then
+      return
     fi
   fi
 

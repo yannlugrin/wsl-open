@@ -17,8 +17,9 @@ trap 'teardown_stubs; rm -rf "$PREFIX_DIR" "${FIXTURE:-}"' EXIT
 # A real tarball and checksum, so the verification path is exercised rather
 # than mocked past.
 FIXTURE="$(mktemp -d)"
-mkdir -p "$FIXTURE/winopen-1.0.1"
+mkdir -p "$FIXTURE/winopen-1.0.1/libexec"
 cp "$OPEN" "$FIXTURE/winopen-1.0.1/open"
+printf '# stand-in helper\n' > "$FIXTURE/winopen-1.0.1/libexec/open-url.ps1"
 tar -czf "$FIXTURE/winopen-1.0.1.tar.gz" -C "$FIXTURE" winopen-1.0.1
 ( cd "$FIXTURE" && sha256sum winopen-1.0.1.tar.gz > SHA256SUMS )
 printf 'deadbeef  winopen-1.0.1.tar.gz\n' > "$FIXTURE/SHA256SUMS.bad"
@@ -92,6 +93,18 @@ it "installs from the release tarball when there is one"
 run_installer assets
 assert_status 0
 if [[ "$INSTALLED" == open* ]]; then ok; else bad "expected the tool, got: $INSTALLED"; fi
+
+it "installs the PowerShell helper alongside the tool"
+run_installer assets
+if [[ -f "$PREFIX_DIR/libexec/winopen/open-url.ps1" ]]; then ok; else
+  bad "the helper was not installed"; fi
+
+it "installs without a helper when falling back to the tagged script"
+rm -rf "$PREFIX_DIR/libexec"
+run_installer noassets
+assert_status 0
+if [[ ! -e "$PREFIX_DIR/libexec/winopen/open-url.ps1" ]]; then ok; else
+  bad "a helper appeared from a release that has none"; fi
 
 it "refuses a tarball whose checksum does not match"
 run_installer badsum
