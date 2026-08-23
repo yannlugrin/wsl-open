@@ -474,6 +474,11 @@ release:
 just test-windows
 ```
 
+It also carries the one check that only a real desktop can make: that a URL's
+tab landed on the desktop in view rather than on another one, and it tells you
+how many windows were elsewhere — because with everything on one desktop, the
+tab could not have gone wrong and passing proves nothing.
+
 It exists because the interesting failures here are invisible from an exit
 code. `cmd.exe /C start` returns 0 for a scheme nothing has registered,
 `explorer.exe` returns 1 when it succeeded, and `ShellExecuteEx` reports

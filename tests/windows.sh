@@ -75,6 +75,54 @@ else
   fail "open -n" "exited non-zero"
 fi
 
+printf '\nURLs land on the desktop in view (#13)\n'
+
+# A page whose title is distinctive enough to find among real browser windows.
+probe_url="https://www.iana.org/help/example-domains"
+probe_title="Example Domains"
+
+desktop_probe() {
+  command -v powershell.exe >/dev/null 2>&1 || return 1
+  powershell.exe -NoProfile -ExecutionPolicy Bypass \
+    -File "$(wslpath -aw ./desktop-probe.ps1)" -Match "$1" 2>/dev/null | tr -d '\r'
+}
+
+if [[ ! -r ../libexec/open-url.ps1 ]]; then
+  fail "the helper" "libexec/open-url.ps1 is missing, so #13 cannot work at all"
+elif ! timeout 60 "$OPEN" "$probe_url" >/dev/null 2>&1; then
+  fail "open $probe_url" "exited non-zero"
+else
+  # The browser needs a moment to open the tab and retitle its window.
+  found=""
+  for _ in 1 2 3 4 5 6 7 8; do
+    sleep 2
+    found="$(desktop_probe "$probe_title")"
+    [[ -n "$found" ]] && break
+  done
+
+  if [[ -z "$found" ]]; then
+    look "the tab" "no window titled '$probe_title' was found. It may have opened without focus, or the probe cannot see it -- check the screen."
+  elif grep -q '^here' <<< "$found"; then
+    pass "the tab opened on the desktop in view"
+  elif grep -q '^elsewhere' <<< "$found"; then
+    fail "the tab opened on another desktop" "which is the whole thing #13 exists to prevent"
+  else
+    look "the tab" "the desktop could not be determined: $found"
+  fi
+fi
+
+# The check only proves something when there are windows on more than one
+# desktop: with everything on the desktop in view, the tab could not have landed
+# anywhere else and passing says nothing.
+all_windows="$(desktop_probe " - ")"
+elsewhere="$(grep -c '^elsewhere' <<< "$all_windows" || true)"
+if [[ "$elsewhere" -gt 0 ]]; then
+  printf '      (%s window(s) on other desktops, so the check had somewhere to go wrong)\n' "$elsewhere"
+else
+  printf '      (every window is on this desktop, so that check proved little --\n'
+  printf '       move a browser window to another desktop and run it again)\n'
+fi
+
 printf '\nthings Windows will not tell us\n'
 if timeout 60 "$OPEN" "definitely-not-a-scheme://nothing" >/dev/null 2>&1; then
   pass "an unregistered scheme still exits 0 (documented: we cannot detect it)"
