@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-23
+
+If you are upgrading, these change behaviour you may be relying on:
+
+- `$WSL_OPEN_EDITOR` is now `$WINOPEN_EDITOR`.
+- `-e` no longer reads that variable; it is always `notepad.exe`. Use `-t`,
+  which is what macOS `open(1)` means by "the default text editor".
+- `--update` no longer completes on its own when the destination needs root.
+  It downloads, then prints the one privileged command and exits 1.
+- `-R`, `-D`, `-e` and `-t` now fail on a URL instead of silently ignoring the
+  flag and opening it anyway.
+- Installing from source uses `just`, not `make` — or just copy `open` onto
+  your `PATH`, which is the whole install.
+
 ### Added
 
 - **URLs open on the virtual desktop you are looking at.** Windows gives a URL
@@ -172,6 +186,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for multiple targets (`open file1 file2 file3`)
 - Makefile with `install` and `uninstall` targets
 
-[Unreleased]: https://github.com/yannlugrin/winopen/compare/1.0.1...HEAD
+[Unreleased]: https://github.com/yannlugrin/winopen/compare/1.1.0...HEAD
+[1.1.0]: https://github.com/yannlugrin/winopen/compare/1.0.1...1.1.0
 [1.0.1]: https://github.com/yannlugrin/winopen/compare/1.0.0...1.0.1
 [1.0.0]: https://github.com/yannlugrin/winopen/releases/tag/1.0.0
