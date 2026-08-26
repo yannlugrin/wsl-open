@@ -2,7 +2,10 @@
 set -euo pipefail
 
 REPO="yannlugrin/winopen"
-PREFIX="${PREFIX:-/usr/local}"
+SELF_URL="https://raw.githubusercontent.com/$REPO/main/install.sh"
+# Somewhere the user already owns, so the common path needs no privilege at all.
+# /usr/local is a deliberate choice, made by setting PREFIX.
+PREFIX="${PREFIX:-$HOME/.local}"
 DEST="$PREFIX/bin/open"
 
 VERSION="${VERSION:-latest}"
@@ -21,28 +24,14 @@ fi
 
 echo "Installing winopen $VERSION to $DEST..."
 
-# Whether root is needed is a question about the nearest directory that exists,
-# not about $PREFIX/bin: on a fresh prefix that directory has not been created
-# yet, so testing it directly asks for a password to write somewhere the user
-# already owns.
-probe="$PREFIX/bin"
-while [[ ! -e "$probe" && "$probe" != "/" && "$probe" != "." ]]; do
-  probe="$(dirname "$probe")"
-done
-
-sudo_cmd=""
-if [[ ! -w "$probe" ]]; then
-  sudo_cmd="sudo"
-fi
-
-$sudo_cmd mkdir -p "$PREFIX/bin"
 
 staged=""
 helper_file=""
+keep_workdir=false
 workdir="$(mktemp -d)"
 cleanup() {
-  rm -rf "$workdir"
-  [[ -n "$staged" ]] && $sudo_cmd rm -f "$staged"
+  $keep_workdir || rm -rf "$workdir"
+  [[ -n "$staged" ]] && rm -f "$staged"
   return 0
 }
 trap cleanup EXIT
@@ -93,20 +82,59 @@ if [[ ! -f "$source_file" ]] ||
   exit 1
 fi
 
+# Nothing here escalates, exactly as `open` does not. Re-running this under sudo
+# would be worse than either: piped from curl, that runs the download as root
+# too. So the work that could be done as this user has been, and what is left is
+# printed for them to run.
+#
+# Whether root is needed is a question about the nearest directory that exists:
+# on a fresh prefix, $PREFIX/bin has not been created yet.
+probe="$PREFIX/bin"
+while [[ ! -e "$probe" && "$probe" != "/" && "$probe" != "." ]]; do
+  probe="$(dirname "$probe")"
+done
+
+if [[ ! -w "$probe" ]]; then
+  keep_workdir=true
+  {
+    echo
+    echo "Downloaded and verified winopen $VERSION."
+    echo "$PREFIX/bin is not yours to write, so the rest needs root:"
+    echo
+    echo "    sudo install -d $PREFIX/bin"
+    echo "    sudo install -m 755 $source_file $DEST"
+    if [[ -n "$helper_file" && -f "$helper_file" ]]; then
+      echo "    sudo install -d $PREFIX/libexec/winopen"
+      echo "    sudo install -m 644 $helper_file $PREFIX/libexec/winopen/open-url.ps1"
+    fi
+    echo
+    echo "Or install somewhere you own, which needs no root at all:"
+    # Piped from curl, $0 is the shell, not something anyone can re-run.
+    if [[ -f "$0" ]]; then
+      echo "    PREFIX=\$HOME/.local $0"
+    else
+      echo "    PREFIX=\$HOME/.local curl -fsSL $SELF_URL | bash"
+    fi
+  } >&2
+  exit 1
+fi
+
+mkdir -p "$PREFIX/bin"
+
 # The PowerShell helper that keeps a URL's tab on the desktop in view. Optional:
 # `open` works without it, just without that. Only the tarball carries it, so a
 # fallback install simply has none.
 if [[ -n "$helper_file" && -f "$helper_file" ]]; then
-  $sudo_cmd mkdir -p "$PREFIX/libexec/winopen"
-  $sudo_cmd install -m 644 "$helper_file" "$PREFIX/libexec/winopen/open-url.ps1"
+  mkdir -p "$PREFIX/libexec/winopen"
+  install -m 644 "$helper_file" "$PREFIX/libexec/winopen/open-url.ps1"
 fi
 
 # Staged beside the destination so the last step is a rename within one
 # filesystem, which either happens or does not. Installing over the top can
 # still truncate if it is interrupted.
 staged="$PREFIX/bin/.open.$$"
-$sudo_cmd install -m 755 "$source_file" "$staged"
-$sudo_cmd mv -f "$staged" "$DEST"
+install -m 755 "$source_file" "$staged"
+mv -f "$staged" "$DEST"
 staged=""
 
 echo "Installed successfully: $("$DEST" --version)"

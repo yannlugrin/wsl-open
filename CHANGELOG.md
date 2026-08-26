@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`install.sh` never runs `sudo` either.** It defaults to `~/.local`, so the
+  usual install needs no privilege at all; asked for a prefix you do not own, it
+  downloads, verifies, and prints the commands to finish rather than
+  escalating. Re-running it under `sudo` would be worse than either — piped
+  from `curl`, that runs the download as root too. The previous default was
+  `/usr/local`; pass `PREFIX=/usr/local` to keep it.
+
 ### Fixed
 
 - **Installing to a prefix that does not exist yet asked for root.** The

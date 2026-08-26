@@ -151,6 +151,35 @@ if [[ "$STATUS" == 0 && -x "$PREFIX_DIR/fresh/deep/bin/open" ]]; then ok; else
   bad "a fresh, user-owned prefix should not need root" "status=$STATUS stderr=$STDERR"; fi
 rm -rf "$PREFIX_DIR/fresh"
 
+it "defaults to a prefix the user owns, so nothing needs root"
+fakehome="$(mktemp -d)"
+STDOUT="$(env -i HOME="$fakehome" PATH="$STUB_DIR:/usr/bin:/bin" \
+  MODE=assets bash "$INSTALLER" 2>"$STUB_DIR/stderr")"
+STATUS=$?
+STDERR="$(cat "$STUB_DIR/stderr")"
+if [[ "$STATUS" == 0 && -x "$fakehome/.local/bin/open" ]]; then ok; else
+  bad "expected an install under ~/.local" "status=$STATUS stderr=$STDERR"; fi
+rm -rf "$fakehome"
+
+it "prints the privileged commands instead of escalating"
+if is_root; then skip "running as root, every path is writable"; else
+  chmod 555 "$PREFIX_DIR"
+  STDOUT="$(env -i HOME="$HOME" PATH="$STUB_DIR:/usr/bin:/bin" \
+    MODE=assets PREFIX="$PREFIX_DIR/nope" bash "$INSTALLER" 2>"$STUB_DIR/stderr")"
+  STATUS=$?
+  STDERR="$(cat "$STUB_DIR/stderr")"
+  chmod 755 "$PREFIX_DIR"
+  if [[ "$STATUS" == 1 && "$STDERR" == *"sudo install -m 755"* ]]; then ok; else
+    bad "expected the commands to be printed" "status=$STATUS stderr=$STDERR"; fi
+fi
+
+it "keeps the download, so the printed commands refer to files that exist"
+if is_root; then skip "running as root"; else
+  named="$(grep -o '/[^ ]*/winopen-[^/ ]*/open' <<< "$STDERR" | head -1)"
+  if [[ -n "$named" && -f "$named" ]]; then ok; else
+    bad "the file the command names is gone" "named: ${named:-<none>}"; fi
+fi
+
 it "leaves no staging files behind, whatever happened"
 for mode in assets badsum nosums noassets truncated htmlerror; do
   run_installer "$mode"

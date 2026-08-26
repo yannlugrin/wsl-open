@@ -31,21 +31,34 @@ sudo install -m 644 libexec/open-url.ps1 /usr/local/libexec/winopen/
 ### With the install script
 
 Fetches the release tarball, verifies it against the published `SHA256SUMS`,
-and installs both files:
+and installs both files into `~/.local` — **no root, at any point**:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yannlugrin/winopen/main/install.sh | bash
 ```
 
-It calls `sudo` when the prefix is not yours to write — unlike `open` itself,
-which never does. If you would rather not pipe a script into a shell that can
-then escalate, use the manual install above, or install somewhere you own:
+Neither the installer nor `open` itself ever runs `sudo` for you. Ask for a
+prefix you do not own and it downloads, verifies, and then prints the commands
+to finish the job rather than escalating:
 
 ```bash
-PREFIX=~/.local curl -fsSL .../install.sh | bash    # no root at any point
+PREFIX=/usr/local curl -fsSL .../install.sh | bash
 ```
 
-Pin a version with `VERSION=1.1.0`, and change where it lands with `PREFIX`.
+```
+Downloaded and verified winopen 1.1.0.
+/usr/local/bin is not yours to write, so the rest needs root:
+
+    sudo install -d /usr/local/bin
+    sudo install -m 755 /tmp/tmp.XXXX/winopen-1.1.0/open /usr/local/bin/open
+    ...
+```
+
+Pin a version with `VERSION=1.1.0`.
+
+Note `~/.local/bin` is on `PATH` for login shells on most distributions, but not
+always for programs started by services. If you want `open` reachable from
+everywhere, install to `/usr/local` with the commands above.
 
 ### From source
 
