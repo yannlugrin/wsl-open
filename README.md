@@ -71,17 +71,17 @@ curl -fsSL https://raw.githubusercontent.com/yannlugrin/winopen/main/install.sh 
 PREFIX=/usr/local curl -fsSL https://raw.githubusercontent.com/yannlugrin/winopen/main/install.sh | bash    # silently ignored
 ```
 
-`VERSION=1.1.0` pins a release. `WITHOUT_DESKTOP=1` skips the helper, and takes
+`VERSION=1.2.0` pins a release. `WITHOUT_DESKTOP=1` skips the helper, and takes
 away an installed one — the tool and the helper are one version.
 
 Asked for `/usr/local`, the script finishes like this rather than escalating:
 
 ```
-Downloaded and verified winopen 1.1.0.
+Downloaded and verified winopen 1.2.0.
 /usr/local/bin is not yours to write, so the rest needs root:
 
     sudo install -d /usr/local/bin
-    sudo install -m 755 /tmp/tmp.XXXX/winopen-1.1.0/open /usr/local/bin/open
+    sudo install -m 755 /tmp/tmp.XXXX/winopen-1.2.0/open /usr/local/bin/open
     ...
 ```
 
@@ -407,7 +407,7 @@ Where it pays off is letting you pin. A dotfiles repository can record a
 version and its SHA and refuse anything else:
 
 ```bash
-sha256sum -c <<< "8f423d...  winopen-1.1.0.tar.gz"
+sha256sum -c <<< "8f423d...  winopen-1.2.0.tar.gz"
 ```
 
 Real integrity is signing, which is a separate question and not answered here.

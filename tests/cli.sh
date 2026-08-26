@@ -316,6 +316,11 @@ unstub_curl
 # --- --update takes the release asset, checked (#16) ------------------------
 
 # Real releases, so the checksum path is exercised rather than mocked past.
+# The helper sits beside the tool in a clone and one level up once installed, so
+# the suite can run against either.
+HELPER="$(dirname "$OPEN")/libexec/open-url.ps1"
+[[ -f "$HELPER" ]] || HELPER="$(dirname "$OPEN")/../libexec/winopen/open-url.ps1"
+
 make_release() {
   local dir="$1" tag="$2"
   rm -rf "$dir"
@@ -323,7 +328,7 @@ make_release() {
   cp "$OPEN" "$dir/winopen-$tag/open"
   if [[ "${3:-helper}" == helper ]]; then
     mkdir -p "$dir/winopen-$tag/libexec"
-    cp "$(dirname "$OPEN")/libexec/open-url.ps1" "$dir/winopen-$tag/libexec/"
+    cp "$HELPER" "$dir/winopen-$tag/libexec/"
   fi
   tar -czf "$dir/winopen-$tag.tar.gz" -C "$dir" "winopen-$tag"
   ( cd "$dir" && sha256sum "winopen-$tag.tar.gz" > SHA256SUMS )
