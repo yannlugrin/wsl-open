@@ -32,7 +32,8 @@ Flags:
   -D           Open the enclosing folder in Explorer
   -R           Reveal in Explorer (highlight the file)
   -e           Open in notepad.exe
-  -t           Open in the default text editor ($WINOPEN_EDITOR, else notepad.exe)
+  -t           Open in the default text editor ($WINOPEN_EDITOR, else whatever
+               Windows registered for .txt)
   -W           Wait for the application to exit
   -n           Open a new instance, rather than reusing a running one
   -f           Read stdin into a temp file, then open it in the text editor
@@ -42,7 +43,7 @@ Flags:
   -V, --version  Show version
   --check-update  Check if a newer version is available
   --update        Update to the latest version
-  --install-xdg   Install an xdg-open shim into $PREFIX/bin (default /usr/local)
+  --install-xdg   Install an xdg-open shim beside open, or into $PREFIX/bin
   --uninstall-xdg Remove the xdg-open shim and restore any backup
 EOF
 }
@@ -93,6 +94,12 @@ check_update() {
   fi
 }
 
+update_die() {
+  local workdir="$1"; shift
+  rm -rf "$workdir"
+  die "$@"
+}
+
 self_update() {
   local latest
   latest="$(fetch_latest_version)"
@@ -104,40 +111,84 @@ self_update() {
     exit 0
   fi
 
-  local self url tmpfile
+  local self workdir base asset source_file helper_src
   self="$(realpath "$0")"
-  url="https://raw.githubusercontent.com/$REPO/$latest/open"
-  tmpfile="$(mktemp /tmp/winopen-update-XXXXXX)"
+  workdir="$(mktemp -d /tmp/winopen-update-XXXXXX)"
+  base="https://github.com/$REPO/releases/download/$latest"
+  asset="winopen-${latest}.tar.gz"
 
   echo "Updating open $VERSION -> $latest..."
-  curl -fsSL "$url" -o "$tmpfile" 2>/dev/null ||
-    { rm -f "$tmpfile"; die "failed to download update"; }
 
-  # A proxy or an error page answers 200 with a body that is not the tool, and
-  # this one ends up executable on PATH.
-  if ! { head -n 1 "$tmpfile" | grep -q '^#!.*sh'; } || ! grep -q '^VERSION=' "$tmpfile"; then
-    rm -f "$tmpfile"
-    die "what was downloaded does not look like winopen; nothing was changed"
-  fi
+  # The release asset, as install.sh takes it and for the same reason: a tag can
+  # be moved and raw.githubusercontent.com follows it, while an asset cannot be
+  # replaced without showing. No fallback -- an update only goes to the latest.
+  curl -fsSL "$base/$asset" -o "$workdir/$asset" 2>/dev/null ||
+    update_die "$workdir" "release $latest has no $asset; nothing was changed"
+
+  curl -fsSL "$base/SHA256SUMS" -o "$workdir/SHA256SUMS" 2>/dev/null ||
+    update_die "$workdir" "release $latest has a tarball but no SHA256SUMS; nothing was changed"
+
+  ( cd "$workdir" && sha256sum --ignore-missing -c SHA256SUMS >/dev/null 2>&1 ) ||
+    update_die "$workdir" "checksum mismatch for $asset; nothing was changed"
+
+  tar -xzf "$workdir/$asset" -C "$workdir" 2>/dev/null ||
+    update_die "$workdir" "could not unpack $asset; nothing was changed"
+
+  source_file="$workdir/winopen-${latest}/open"
+  helper_src="$workdir/winopen-${latest}/libexec/open-url.ps1"
+  [[ -f "$source_file" ]] ||
+    update_die "$workdir" "$asset does not carry an open to install; nothing was changed"
 
   # Deliberately not `sudo`-ing this ourselves, and deliberately not asking the
   # user to re-run the whole command as root either: that would put the network
   # fetch under root as well, which is the part worth keeping out of it. The
   # download has already happened as this user, so what is left is one
-  # privileged copy, printed for them to run.
+  # privileged copy, printed for them to run. The download stays where it is,
+  # so the command has something to copy.
   if [[ ! -w "$self" ]]; then
+    local helper
+    helper="$(winopen_libexec)" || helper=""
     {
-      echo "Downloaded $latest to $tmpfile."
+      echo "Downloaded and verified $latest to $source_file."
       echo "$self is not writable by you, so the last step needs root:"
-      echo "    sudo install -m 755 $tmpfile $self"
+      echo "    sudo install -m 755 $source_file $self"
+      if [[ -n "$helper" && -f "$helper_src" ]]; then
+        echo "    sudo install -m 644 $helper_src $helper"
+      fi
     } >&2
     exit 1
   fi
 
-  install -m 755 "$tmpfile" "$self"
-  rm -f "$tmpfile"
-
+  install -m 755 "$source_file" "$self"
   echo "Updated successfully: $("$self" --version)"
+
+  # Non-zero when it printed a command naming these files, so they must stay.
+  if update_helper "$helper_src"; then
+    rm -rf "$workdir"
+  fi
+}
+
+# One release, one pair: a new tool beside a stale helper does not fail, it
+# falls back silently. In place only -- installing one belongs to the install.
+update_helper() {
+  local src="$1" helper
+  helper="$(winopen_libexec)" || return 0
+
+  if [[ ! -f "$src" ]]; then
+    warn "this release carries no virtual-desktop helper; $helper is still the old one"
+    return 0
+  fi
+
+  if [[ ! -w "$helper" ]]; then
+    {
+      echo "$helper is not writable by you, so refreshing it needs root:"
+      echo "    sudo install -m 644 $src $helper"
+    } >&2
+    return 1
+  fi
+
+  install -m 644 "$src" "$helper"
+  echo "Refreshed the virtual-desktop helper: $helper"
 }
 
 version() {
@@ -218,7 +269,8 @@ winopen_libexec() {
   dir="$(dirname "$(realpath "$0")")"
   for candidate in "$dir/../libexec/winopen/open-url.ps1" "$dir/libexec/open-url.ps1"; do
     if [[ -r "$candidate" ]]; then
-      printf '%s\n' "$candidate"
+      # Resolved, so no bin/../libexec reaches a message someone has to read.
+      realpath "$candidate"
       return 0
     fi
   done
@@ -589,7 +641,13 @@ xdg_open_main() {
 # file, so --update and the release tarball have nothing extra to track, and
 # the shim can never drift out of step with the tool it points at.
 xdg_dest() {
-  echo "${PREFIX:-/usr/local}/bin/xdg-open"
+  if [[ -n "${PREFIX:-}" ]]; then
+    echo "$PREFIX/bin/xdg-open"
+  else
+    # Beside the tool, so the two stay together wherever the install put them.
+    # PREFIX still decides, and elsewhere is often the point -- see install_xdg.
+    echo "$(dirname "$(realpath "$0")")/xdg-open"
+  fi
 }
 
 # Root is never assumed. If the destination is not this user's to write, the
@@ -653,8 +711,15 @@ install_xdg() {
 
   ln -s "$self" "$dest"
   echo "Installed $dest -> $self"
+
+  # Said every time: a shim nothing finds looks exactly like one that works.
   echo
-  echo "Programs calling xdg-open now open things through Windows."
+  echo "Programs find it only if $bindir comes first on the PATH they run with."
+  echo "Services, and anything Windows starts in WSL, get a short fixed one."
+  if [[ "$bindir" != "/usr/local/bin" ]]; then
+    echo "For those: PREFIX=/usr/local $0 --install-xdg"
+  fi
+  echo
   echo "To route \$BROWSER the same way, add to your shell config:"
   echo "    export BROWSER=$dest"
   echo

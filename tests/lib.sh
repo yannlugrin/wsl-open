@@ -63,14 +63,30 @@ stub_curl() {
   case "$1" in
     redirect) printf '#!/usr/bin/env bash\nprintf "%%s" "%s"\n' "$2" > "$STUB_DIR/curl" ;;
     fail)     printf '#!/usr/bin/env bash\nexit 6\n' > "$STUB_DIR/curl" ;;
-    # $2 the tag the redirect resolves to, $3 a file to serve as the download
-    update)
+    # A release, served from a directory of assets: $2 the tag, $3 that
+    # directory, $4 how it should go wrong -- noassets, nosums or badsum.
+    release)
       cat > "$STUB_DIR/curl" <<EOF
 #!/usr/bin/env bash
 case " \$* " in *" -fsI "*) printf 'https://github.com/x/y/releases/tag/$2'; exit 0 ;; esac
-out=""; prev=""
-for a in "\$@"; do [[ "\$prev" == "-o" ]] && out="\$a"; prev="\$a"; done
-cat "$3" > "\$out"
+url=""; out=""; prev=""
+for a in "\$@"; do
+  [[ "\$prev" == "-o" ]] && out="\$a"
+  case "\$a" in http*) url="\$a" ;; esac
+  prev="\$a"
+done
+case "\$url" in
+  *.tar.gz)
+    if [[ "${4:-ok}" == noassets ]]; then exit 22; fi
+    cp "$3/winopen-$2.tar.gz" "\$out" ;;
+  *SHA256SUMS)
+    case "${4:-ok}" in
+      nosums) exit 22 ;;
+      badsum) cp "$3/SHA256SUMS.bad" "\$out" ;;
+      *)      cp "$3/SHA256SUMS" "\$out" ;;
+    esac ;;
+  *) exit 22 ;;
+esac
 EOF
       ;;
   esac

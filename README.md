@@ -17,7 +17,7 @@ so links opened by editors and CLI tools go through it too — with the command
 set of macOS `open(1)`: reveal, wait, choose the application, the text editor,
 stdin. And it does one thing no other WSL opener does:
 [URLs open on the virtual desktop you are looking at](#urls-open-on-the-desktop-you-are-looking-at),
-not in whichever browser window happened to be active last.
+instead of switching you to the desktop where your browser already is.
 
 `wslview`, from wslu, is archived and no longer packaged in Ubuntu 26.04.
 winopen began as a shell function written to replace it on a fresh install, and
@@ -29,7 +29,8 @@ installs is `open`.
 Needs WSL: the tool works by running `wslpath`, `cmd.exe`, `explorer.exe` and
 `powershell.exe` from the Linux side. Without `powershell.exe` three things
 fall back: URLs go straight to Windows, `-t` uses `notepad.exe`, and `-n`
-opens normally and says so. `--check-update` and `--update` need `curl`.
+opens normally and says so. `--check-update` and `--update` need `curl`, `tar`
+and `sha256sum`.
 
 The install script fetches the release tarball, checks it against the
 published `SHA256SUMS`, and installs `open` and the
@@ -70,7 +71,8 @@ curl -fsSL https://raw.githubusercontent.com/yannlugrin/winopen/main/install.sh 
 PREFIX=/usr/local curl -fsSL https://raw.githubusercontent.com/yannlugrin/winopen/main/install.sh | bash    # silently ignored
 ```
 
-`VERSION=1.1.0` pins a release. `WITHOUT_DESKTOP=1` skips the helper.
+`VERSION=1.1.0` pins a release. `WITHOUT_DESKTOP=1` skips the helper, and takes
+away an installed one — the tool and the helper are one version.
 
 Asked for `/usr/local`, the script finishes like this rather than escalating:
 
@@ -106,20 +108,29 @@ just prefix=~/.local install      # no sudo needed
 sudo just prefix=/opt install
 ```
 
+`just install --without-desktop` leaves out the [desktop
+helper](#urls-open-on-the-desktop-you-are-looking-at), as `WITHOUT_DESKTOP=1`
+does for the install script.
+
 If you installed the `xdg-open` shim, remove it with `open --uninstall-xdg`
 before uninstalling the tool, while `open` is still there to do it.
 
 ## URLs open on the desktop you are looking at
 
-Windows hands a URL to the browser that is already running, which opens it in
-whichever of its windows was **last active** — on whatever virtual desktop that
-window happens to be. So the tab lands somewhere you cannot see, or Windows
-drags your view across to follow it.
+Open a URL from a desktop with no browser window on it, and Windows hands it to
+a browser window on another desktop — then switches you there, or leaves the
+tab where you cannot see it. Microsoft's own [`IVirtualDesktopManager`
+documentation](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ivirtualdesktopmanager)
+describes exactly this case and says the browser should open a new window on
+the active desktop instead, and Chromium's [design
+notes](https://chromium.googlesource.com/chromium/src/+/main/docs/windows_virtual_desktop_handling.md)
+say the same. In practice, a URL handed over from outside the browser does not
+get that treatment.
 
-winopen raises a browser window that is already on the desktop in view and
-*then* hands over the URL, because a browser opens a URL in its last active
-window and activating one is what makes it that. With no window here to raise,
-it opens a new one, which Windows always places on the desktop in view.
+winopen does it from the outside. With no browser window on the desktop in
+view, it asks the browser for a new window, which Windows places where you
+are. With one, it activates that window *before* handing over the URL, so the
+tab lands in it rather than in whichever window was last active elsewhere.
 
 Nothing needs doing — it is what `open https://example.com` does once the
 helper is installed. It costs about 300ms over handing the URL straight to
@@ -287,40 +298,40 @@ editors, CLI tools, anything calling `xdg-open` — go elsewhere. Installing the
 shim routes those through winopen too:
 
 ```bash
-open --install-xdg      # into $PREFIX/bin, default /usr/local/bin
+open --install-xdg      # beside `open` itself; PREFIX=... puts it elsewhere
 open --uninstall-xdg    # remove it, restoring anything it replaced
 ```
 
 Installing winopen does not install the shim. It is a separate, explicit step,
 and a separately reversible one.
 
-`/usr/local/bin` is not normally yours to write. As everywhere in winopen,
-`open` will not become root for you — it says what it would do and leaves you
-to run it:
+The shim goes beside the tool, so a `~/.local` install needs no root. Sending
+it to `/usr/local/bin` does, and as everywhere in winopen, `open` will not
+become root for you — it says what it would do and leaves you to run it:
 
 ```
 /usr/local/bin is not writable by you, so this needs root.
 It would run:
-    ln -s /usr/local/bin/open /usr/local/bin/xdg-open
+    ln -s /home/you/.local/bin/open /usr/local/bin/xdg-open
 
 Nothing has been changed. Run it again as root:
-    sudo open --install-xdg
+    sudo PREFIX=/usr/local /home/you/.local/bin/open --install-xdg
 ```
 
 Under `sudo` the directory simply is writable, so it goes ahead.
 
 ### It shadows, it does not replace
 
-`xdg-utils` ships `/usr/bin/xdg-open`. `/usr/local/bin` comes first on `PATH`,
-so the shim takes precedence while the packaged file is left untouched —
+`xdg-utils` ships `/usr/bin/xdg-open`. The shim's directory comes first on
+`PATH`, so it takes precedence while the packaged file is left untouched —
 package upgrades do not fight it, and removing the shim hands control straight
 back. Only a file already sitting at the shim's own path is ever moved, and
 then it is backed up alongside and restored on uninstall.
 
-`PREFIX=~/.local open --install-xdg` avoids `sudo` — but `~/.local/bin` is
-typically only on `PATH` in interactive shells, so programs started by
-services, or launched into WSL from Windows, will not see it. That is the case
-the shim exists for.
+`~/.local/bin` is typically only on `PATH` in interactive shells, so a shim
+installed there is invisible to programs started by services, or launched into
+WSL from Windows — the case the shim exists for. `PREFIX=/usr/local open
+--install-xdg` puts it where they look, and `open` says so on every install.
 
 ### It never falls back
 
@@ -359,26 +370,34 @@ export BROWSER=/usr/local/bin/xdg-open
 
 ## Updating
 
-`--check-update` asks GitHub what the latest release is. `--update` downloads
-it, checks that what arrived is actually the tool — an error page or a captive
-portal answers 200 with a body that would otherwise end up executable on your
-`PATH` — and puts it in place.
+`--check-update` asks GitHub what the latest release is. `--update` takes that
+release's tarball, checks it against the `SHA256SUMS` published beside it,
+unpacks it and puts `open` in place — the same path `install.sh` takes, and for
+the same reason: a tag can be moved, and `raw.githubusercontent.com` follows it,
+while a release asset cannot. There is no fallback for a release without assets,
+because an update only ever goes to the latest one.
+
+It refreshes the desktop helper out of that same tarball when one is installed
+beside the tool — the two are one release, and a stale helper fails silently
+rather than loudly. It never installs one that is not there.
 
 If the installed `open` is not yours to write, `--update` does not ask for
 root, and does not tell you to re-run the whole command as root either, which
-would put the download under root too. It fetches and checks the new version as
-you, then hands you the single privileged step:
+would put the download under root too. It fetches and verifies as you, then
+hands you the privileged steps:
 
 ```
-Downloaded 1.1.0 to /tmp/winopen-update-a1b2c3.
+Updating open 1.1.0 -> 1.2.0...
+Downloaded and verified 1.2.0 to /tmp/winopen-update-SrGyM5/winopen-1.2.0/open.
 /usr/local/bin/open is not writable by you, so the last step needs root:
-    sudo install -m 755 /tmp/winopen-update-a1b2c3 /usr/local/bin/open
+    sudo install -m 755 /tmp/winopen-update-SrGyM5/winopen-1.2.0/open /usr/local/bin/open
+    sudo install -m 644 /tmp/winopen-update-SrGyM5/winopen-1.2.0/libexec/open-url.ps1 /usr/local/libexec/winopen/open-url.ps1
 ```
 
 ### What the checksum does and does not buy
 
-The installer verifies the tarball against a `SHA256SUMS` published in the
-same release. That protects against a truncated download or a mis-published
+The installer and `--update` verify the tarball against a `SHA256SUMS`
+published in the same release. That protects against a truncated download or a mis-published
 asset — integrity against accident. It does **not** protect against a
 compromised source: whoever could replace the tarball could replace the
 checksum beside it, and both arrive over the same connection from the same

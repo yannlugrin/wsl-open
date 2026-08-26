@@ -313,56 +313,141 @@ assert_status 1
 assert_stderr "failed to check for updates"
 unstub_curl
 
-# --- --update never escalates either (#16) ---------------------------------
+# --- --update takes the release asset, checked (#16) ------------------------
+
+# Real releases, so the checksum path is exercised rather than mocked past.
+make_release() {
+  local dir="$1" tag="$2"
+  rm -rf "$dir"
+  mkdir -p "$dir/winopen-$tag"
+  cp "$OPEN" "$dir/winopen-$tag/open"
+  if [[ "${3:-helper}" == helper ]]; then
+    mkdir -p "$dir/winopen-$tag/libexec"
+    cp "$(dirname "$OPEN")/libexec/open-url.ps1" "$dir/winopen-$tag/libexec/"
+  fi
+  tar -czf "$dir/winopen-$tag.tar.gz" -C "$dir" "winopen-$tag"
+  ( cd "$dir" && sha256sum "winopen-$tag.tar.gz" > SHA256SUMS )
+  printf 'deadbeef  winopen-%s.tar.gz\n' "$tag" > "$dir/SHA256SUMS.bad"
+}
+
+RELEASE="$WORK_DIR/release"
+RELEASE_NOHELPER="$WORK_DIR/release-nohelper"
+make_release "$RELEASE" 9.9.9
+make_release "$RELEASE_NOHELPER" 9.9.9 nohelper
+
+# The installed layout: the tool in bin/, the helper in libexec/winopen/.
+installed_tree() {
+  rm -rf "$WORK_DIR/inst"
+  mkdir -p "$WORK_DIR/inst/bin"
+  cp "$OPEN" "$WORK_DIR/inst/bin/open"
+  sed -i 's/^VERSION=".*"$/VERSION="0.0.1"/' "$WORK_DIR/inst/bin/open"
+  if [[ "${1:-helper}" == helper ]]; then
+    mkdir -p "$WORK_DIR/inst/libexec/winopen"
+    printf 'stale helper\n' > "$WORK_DIR/inst/libexec/winopen/open-url.ps1"
+  fi
+}
+
+run_update() {
+  STDOUT="$(env -i HOME="$HOME" PATH="$STUB_DIR:/usr/bin:/bin" \
+    bash "$WORK_DIR/inst/bin/open" --update 2>"$STUB_DIR/stderr")"
+  STATUS=$?
+  STDERR="$(cat "$STUB_DIR/stderr")"
+  return 0
+}
 
 it "updates in place when the file is writable"
-cp "$OPEN" "$WORK_DIR/updatable"
-sed -i 's/^VERSION=".*"$/VERSION="0.0.1"/' "$WORK_DIR/updatable"
-chmod 755 "$WORK_DIR/updatable"
-stub_curl update "9.9.9" "$OPEN"
-STDOUT="$(env -i HOME="$HOME" PATH="$STUB_DIR:/usr/bin:/bin" \
-  bash "$WORK_DIR/updatable" --update 2>"$STUB_DIR/stderr")"
-STATUS=$?
-STDERR="$(cat "$STUB_DIR/stderr")"
+installed_tree helper
+stub_curl release 9.9.9 "$RELEASE"
+run_update
 assert_status 0
 assert_stdout "Updated successfully"
 
+it "refreshes an installed helper alongside the tool"
+if grep -q '^param(' "$WORK_DIR/inst/libexec/winopen/open-url.ps1"; then ok; else
+  bad "the helper is still the stale one"; fi
+
+it "installs no helper for an install that has none"
+installed_tree nohelper
+stub_curl release 9.9.9 "$RELEASE"
+run_update
+assert_status 0
+if [[ ! -e "$WORK_DIR/inst/libexec" ]]; then ok; else
+  bad "--update installed a helper nobody asked for"; fi
+
+it "keeps the working helper when the release carries none"
+installed_tree helper
+stub_curl release 9.9.9 "$RELEASE_NOHELPER"
+run_update
+assert_status 0
+assert_stderr "still the old one"
+if grep -q 'stale helper' "$WORK_DIR/inst/libexec/winopen/open-url.ps1"; then ok; else
+  bad "a release with no helper replaced the working one"; fi
+
+it "refuses a tarball whose checksum does not match"
+installed_tree helper
+stub_curl release 9.9.9 "$RELEASE" badsum
+run_update
+assert_status 1
+assert_stderr "checksum mismatch"
+if grep -q '^VERSION="0.0.1"' "$WORK_DIR/inst/bin/open"; then ok; else
+  bad "it updated anyway"; fi
+
+it "refuses a release that has a tarball but no SHA256SUMS"
+installed_tree helper
+stub_curl release 9.9.9 "$RELEASE" nosums
+run_update
+assert_status 1
+assert_stderr "no SHA256SUMS"
+
+it "refuses a release with no tarball to check"
+installed_tree helper
+stub_curl release 9.9.9 "$RELEASE" noassets
+run_update
+assert_status 1
+assert_stderr "has no winopen-9.9.9.tar.gz"
+
+it "leaves nothing behind when it is done"
+installed_tree helper
+stub_curl release 9.9.9 "$RELEASE"
+before="$(ls -d /tmp/winopen-update-* 2>/dev/null | wc -l)"
+run_update
+if [[ "$(ls -d /tmp/winopen-update-* 2>/dev/null | wc -l)" == "$before" ]]; then ok; else
+  bad "a download directory was left in /tmp"; fi
+
 it "prints one privileged command rather than escalating, when it cannot write"
 if is_root; then skip "running as root, every path is writable"; else
-  cp "$OPEN" "$WORK_DIR/locked"
-  sed -i 's/^VERSION=".*"$/VERSION="0.0.1"/' "$WORK_DIR/locked"
-  chmod 555 "$WORK_DIR/locked"
-  stub_curl update "9.9.9" "$OPEN"
-  STDOUT="$(env -i HOME="$HOME" PATH="$STUB_DIR:/usr/bin:/bin" \
-    bash "$WORK_DIR/locked" --update 2>"$STUB_DIR/stderr")"
-  STATUS=$?
-  STDERR="$(cat "$STUB_DIR/stderr")"
-  if [[ "$STATUS" == 1 && "$STDERR" == *"sudo install -m 755"* ]]; then ok; else
-    bad "expected the sudo command to be printed" "status=$STATUS stderr=$STDERR"; fi
+  installed_tree helper
+  chmod 555 "$WORK_DIR/inst/bin/open"
+  stub_curl release 9.9.9 "$RELEASE"
+  run_update
+  chmod 755 "$WORK_DIR/inst/bin/open"
+  if [[ "$STATUS" == 1 && "$STDERR" == *"sudo install -m 755"* &&
+        "$STDERR" == *"sudo install -m 644"* ]]; then ok; else
+    bad "expected the commands for the tool and its helper" \
+      "status=$STATUS stderr=$STDERR"; fi
 fi
 
 it "leaves the download in place, so the printed command has something to copy"
 if is_root; then skip "running as root"; else
-  file="$(sed -n 's/^Downloaded .* to \(.*\)\.$/\1/p' <<< "$STDERR")"
+  file="$(sed -n 's/^Downloaded and verified .* to \(.*\)\.$/\1/p' <<< "$STDERR")"
   if [[ -n "$file" && -s "$file" ]]; then ok; else
     bad "the file the command refers to is not there" "named: ${file:-<none>}"; fi
-  rm -f "$file"
+  rm -rf "$(dirname "$(dirname "$file")")"
 fi
 
-it "refuses a download that is not the tool"
-cp "$OPEN" "$WORK_DIR/target"
-sed -i 's/^VERSION=".*"$/VERSION="0.0.1"/' "$WORK_DIR/target"
-chmod 755 "$WORK_DIR/target"
-printf '<!DOCTYPE html><html>404</html>\n' > "$WORK_DIR/notatool"
-stub_curl update "9.9.9" "$WORK_DIR/notatool"
-STDOUT="$(env -i HOME="$HOME" PATH="$STUB_DIR:/usr/bin:/bin" \
-  bash "$WORK_DIR/target" --update 2>"$STUB_DIR/stderr")"
-STATUS=$?
-STDERR="$(cat "$STUB_DIR/stderr")"
-assert_status 1
-assert_stderr "does not look like winopen"
-if grep -q '^VERSION="0.0.1"' "$WORK_DIR/target"; then ok; else
-  bad "an error page replaced the tool"; fi
+it "prints the privileged command for a helper it cannot write, tool updated"
+if is_root; then skip "running as root, every path is writable"; else
+  installed_tree helper
+  chmod 444 "$WORK_DIR/inst/libexec/winopen/open-url.ps1"
+  stub_curl release 9.9.9 "$RELEASE"
+  run_update
+  chmod 644 "$WORK_DIR/inst/libexec/winopen/open-url.ps1"
+  if [[ "$STATUS" == 0 && "$STDOUT" == *"Updated successfully"* &&
+        "$STDERR" == *"sudo install -m 644"* ]]; then ok; else
+    bad "the helper should not be able to fail the update" \
+      "status=$STATUS stdout=$STDOUT stderr=$STDERR"; fi
+  rm -rf /tmp/winopen-update-*
+fi
 unstub_curl
 
 summary

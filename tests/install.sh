@@ -70,16 +70,16 @@ EOF
 chmod +x "$STUB_DIR/curl"
 
 fresh_prefix() {
-  rm -rf "${PREFIX_DIR:?}/bin"
+  rm -rf "${PREFIX_DIR:?}/bin" "${PREFIX_DIR:?}/libexec"
   mkdir -p "$PREFIX_DIR/bin"
   printf '#!/bin/sh\necho PREVIOUS\n' > "$PREFIX_DIR/bin/open"
   chmod +x "$PREFIX_DIR/bin/open"
 }
 
-run_installer() {
+# Against whatever the prefix already holds -- the state a re-install finds,
+# which is not the state a test would set up for itself.
+reinstall() {
   local mode="$1"; shift
-  fresh_prefix
-  rm -rf "${PREFIX_DIR:?}/libexec"
   STDOUT="$(env -i HOME="$HOME" PATH="$STUB_DIR:/usr/bin:/bin" \
     MODE="$mode" PREFIX="$PREFIX_DIR" ${WITHOUT_DESKTOP+WITHOUT_DESKTOP="$WITHOUT_DESKTOP"} \
     bash "$INSTALLER" "$@" 2>"$STUB_DIR/stderr")"
@@ -88,6 +88,11 @@ run_installer() {
   INSTALLED="$("$PREFIX_DIR/bin/open" --version 2>&1 | head -1)"
   LEFTOVERS="$(ls -A "$PREFIX_DIR/bin" | tr '\n' ' ')"
   return 0
+}
+
+run_installer() {
+  fresh_prefix
+  reinstall "$@"
 }
 
 printf 'install.sh\n'
@@ -111,6 +116,40 @@ WITHOUT_DESKTOP=1 run_installer assets
 unset WITHOUT_DESKTOP
 if [[ ! -e "$PREFIX_DIR/libexec/winopen/open-url.ps1" ]]; then ok; else
   bad "WITHOUT_DESKTOP=1 installed it anyway"; fi
+
+it "takes an installed helper away when WITHOUT_DESKTOP=1"
+run_installer assets
+WITHOUT_DESKTOP=1 reinstall assets
+unset WITHOUT_DESKTOP
+if [[ ! -e "$PREFIX_DIR/libexec/winopen/open-url.ps1" ]]; then ok; else
+  bad "the helper someone asked not to have is still installed"; fi
+
+it "says so, rather than removing it quietly"
+if [[ "$STDOUT" == *"Removed the virtual-desktop helper"* ]]; then ok; else
+  bad "no word that a file was taken away" "$STDOUT"; fi
+
+it "takes it away when the release being installed carries none"
+run_installer assets
+reinstall noassets
+if [[ ! -e "$PREFIX_DIR/libexec/winopen/open-url.ps1" ]]; then ok; else
+  bad "a helper from another version was left behind"; fi
+
+it "installs the tool even when the helper's directory is not writable"
+if is_root; then skip "running as root, every path is writable"; else
+  fresh_prefix
+  rm -rf "${PREFIX_DIR:?}/libexec"
+  mkdir -p "$PREFIX_DIR/libexec"
+  chmod 555 "$PREFIX_DIR/libexec"
+  STDOUT="$(env -i HOME="$HOME" PATH="$STUB_DIR:/usr/bin:/bin" \
+    MODE=assets PREFIX="$PREFIX_DIR" bash "$INSTALLER" 2>"$STUB_DIR/stderr")"
+  STATUS=$?
+  STDERR="$(cat "$STUB_DIR/stderr")"
+  chmod 755 "$PREFIX_DIR/libexec"
+  INSTALLED="$("$PREFIX_DIR/bin/open" --version 2>&1 | head -1)"
+  if [[ "$STATUS" == 0 && "$INSTALLED" == open* && "$STDERR" == *"helper"* ]]; then ok; else
+    bad "the optional helper should not be able to fail the install" \
+      "status=$STATUS installed=$INSTALLED stderr=$STDERR"; fi
+fi
 
 it "refuses an unknown option rather than ignoring it"
 run_installer assets --nonsense

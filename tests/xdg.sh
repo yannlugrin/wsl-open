@@ -36,10 +36,30 @@ assert_status 0
 if [[ -L "$SHIM" && "$(readlink -f "$SHIM")" == "$(readlink -f "$OPEN")" ]]; then ok; else
   bad "expected $SHIM -> $OPEN"; fi
 
+it "says the shim is only found on the PATH its callers run with"
+if [[ "$STDOUT" == *"comes first on the PATH they"* ]]; then ok; else
+  bad "no word on where callers look" "$STDOUT"; fi
+
 it "a second install is a no-op, not a second link"
 run_open --install-xdg
 assert_status 0
 assert_stdout "Already installed"
+
+it "goes beside the tool when no prefix says otherwise"
+tree="$(mktemp -d)"
+mkdir -p "$tree/bin"
+cp "$OPEN" "$tree/bin/open"
+STDOUT="$(env -i HOME="$HOME" PATH="$STUB_DIR:/usr/bin:/bin" \
+  bash "$tree/bin/open" --install-xdg 2>"$STUB_DIR/stderr")"
+STATUS=$?
+STDERR="$(cat "$STUB_DIR/stderr")"
+if [[ "$STATUS" == 0 && -L "$tree/bin/xdg-open" ]]; then ok; else
+  bad "expected the shim beside the tool" "status=$STATUS stderr=$STDERR"; fi
+
+it "points elsewhere at where the callers that matter do look"
+if [[ "$STDOUT" == *"PREFIX=/usr/local"* ]]; then ok; else
+  bad "no way out for a prefix nothing else reads" "$STDOUT"; fi
+rm -rf "$tree"
 
 # --- the contract ----------------------------------------------------------
 

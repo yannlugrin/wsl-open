@@ -64,10 +64,11 @@ release workflow fails without it.
   `open` and `install.sh`: a short paragraph on the reason a thing is done that
   way, never a restatement of the line below it. If a comment would only
   paraphrase the code, drop it.
-- **Dependency-free** beyond `wslpath` and coreutils; `curl` for the update
-  paths only. PowerShell reaches what `cmd.exe` cannot and stays **optional**:
-  without it the desktop handling falls back silently (by design), `-t` falls
-  back to `notepad.exe`, and `-n` opens normally and says so.
+- **Dependency-free** beyond `wslpath` and coreutils; `curl` and `tar` for the
+  update paths only. PowerShell reaches what `cmd.exe` cannot and stays
+  **optional**: without it the desktop handling falls back silently (by
+  design), `-t` falls back to `notepad.exe`, and `-n` opens normally and says
+  so.
 - **Nothing runs `sudo`** — not `open`, not `install.sh`. A path that needs a
   destination it cannot write prints the exact privileged commands and stops;
   under `sudo` the destination is simply writable and the same code proceeds.
@@ -198,10 +199,18 @@ answer differs.
   the usual Unix convention and the only way to open a file whose name begins
   with a dash.
 - **The shim shadows, it does not replace.** `/usr/bin/xdg-open` stays dpkg's;
-  the shim lives in `$PREFIX/bin` ahead of it on `PATH`, and it never falls
-  back to what it shadows, because Windows gives it no failure to detect.
+  the shim lives beside the tool -- or in `$PREFIX/bin` -- ahead of it on
+  `PATH`, and it never falls back to what it shadows, because Windows gives it
+  no failure to detect.
 - **`-f` leaves its temp file.** `start` returns before the application has
   read it; deleting it would race the reader.
+- **The printed privileged commands interpolate paths unquoted.** A `PREFIX`
+  containing a space produces a line that has to be fixed before it is pasted.
+  Setting `PREFIX` is an advanced move, and the failure is visible rather than
+  silent, so this stays as it is.
+- **A temp directory left in `/tmp` is not a leak.** `install.sh` and
+  `--update` keep the download when they print commands that name it. `/tmp` is
+  a tmpfs under WSL, so it goes when the instance stops.
 
 ## Releasing
 

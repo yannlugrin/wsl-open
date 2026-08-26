@@ -16,12 +16,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from `curl`, that runs the download as root too. The previous default was
   `/usr/local`; pass `PREFIX=/usr/local` to keep it.
 
-- **`WITHOUT_DESKTOP=1`** skips the virtual-desktop helper, alongside the
-  existing `PREFIX` and `VERSION`. It is installed by default: it lands in the
-  same prefix as the tool, so it needs no privilege the tool does not, and it
-  is inert without `powershell.exe`.
+- **The virtual-desktop helper is installed with the tool**, into the same
+  prefix, so it needs no privilege the tool does not and is inert without
+  `powershell.exe`. `WITHOUT_DESKTOP=1` skips it, alongside the existing
+  `PREFIX` and `VERSION`, and `just install --without-desktop` does the same
+  from source. An install with no helper to place — asked to skip it, or from
+  a release that carries none — takes away the one already there: the tool and
+  the helper are one version. It goes in after the tool, so a `libexec` that is
+  not yours to write costs the helper rather than the install, and the `sudo`
+  lines that would finish the job are printed.
+
+- **`--update` takes the release tarball and checks it** against the published
+  `SHA256SUMS`, the way `install.sh` does, rather than fetching the tagged raw
+  script and sniffing it. A tag can be moved with `git tag -f` and
+  raw.githubusercontent.com follows it; a release asset cannot be replaced
+  without it showing. There is no fallback for a release without assets,
+  because an update only ever goes to the latest one. The virtual-desktop
+  helper is refreshed out of that same tarball when one is installed beside the
+  tool — the two are one release, and a stale helper fails silently rather
+  than loudly — but one that is not there is never installed: that decision
+  belongs to the install. `--update` now needs `tar` and `sha256sum` as well as
+  `curl`.
+
+- **`--install-xdg` puts the shim beside the tool** rather than defaulting to
+  `/usr/local`, so it follows the install instead of asking for root over a
+  prefix winopen was never installed into. `PREFIX` still decides, and every
+  install now says what the choice costs: a program finds the shim only if its
+  directory comes first on the `PATH` that program runs with, which is not the
+  `PATH` you type at.
 
 ### Fixed
+
+- **`--help` described the old `-t`.** It still read "`$WINOPEN_EDITOR`, else
+  notepad.exe", while `-t` has been asking Windows what handles `.txt` and
+  falling back to `notepad.exe` only without `powershell.exe`. The flags table
+  in the README had it right; the two now agree.
 
 - **The documented `curl | bash` examples set their variables on the wrong side
   of the pipe.** `PREFIX=~/.local curl ... | bash` applies the assignment to

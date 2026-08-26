@@ -165,14 +165,6 @@ fi
 
 mkdir -p "$PREFIX/bin"
 
-# The PowerShell helper that keeps a URL's tab on the desktop in view. Optional:
-# `open` works without it, just without that. Only the tarball carries it, so a
-# fallback install simply has none.
-if [[ -n "$helper_file" && -f "$helper_file" ]]; then
-  mkdir -p "$PREFIX/libexec/winopen"
-  install -m 644 "$helper_file" "$PREFIX/libexec/winopen/open-url.ps1"
-fi
-
 # Staged beside the destination so the last step is a rename within one
 # filesystem, which either happens or does not. Installing over the top can
 # still truncate if it is interrupted.
@@ -182,6 +174,43 @@ mv -f "$staged" "$DEST"
 staged=""
 
 echo "Installed successfully: $("$DEST" --version)"
+
+# The helper is optional, so it goes in after the tool: a $PREFIX/libexec that
+# is not yours to write costs the helper rather than the install.
+helper_dest="$PREFIX/libexec/winopen/open-url.ps1"
+
+if [[ -n "$helper_file" && -f "$helper_file" ]]; then
+  if ! { mkdir -p "$PREFIX/libexec/winopen" &&
+         install -m 644 "$helper_file" "$helper_dest"
+       } 2>/dev/null; then
+    keep_workdir=true
+    {
+      echo
+      echo "$PREFIX/libexec is not yours to write, so the virtual-desktop helper"
+      echo "was skipped. URLs still open, just wherever Windows puts them. To add"
+      echo "it, with the download left in place for exactly this:"
+      echo
+      echo "    sudo install -d $PREFIX/libexec/winopen"
+      echo "    sudo install -m 644 $helper_file $helper_dest"
+    } >&2
+  fi
+
+# The tool and the helper are one version, so an install with none to place
+# takes away the one that is there rather than leaving a pair from two.
+elif [[ -e "$helper_dest" ]]; then
+  if rm -f "$helper_dest" 2>/dev/null; then
+    rmdir "$PREFIX/libexec/winopen" "$PREFIX/libexec" 2>/dev/null || :
+    echo "Removed the virtual-desktop helper: $helper_dest"
+  else
+    {
+      echo
+      echo "$helper_dest is not yours to remove, so the old helper is still"
+      echo "there. To take it away:"
+      echo
+      echo "    sudo rm -f $helper_dest"
+    } >&2
+  fi
+fi
 
 # Asked for it and did not get it: releases published before the helper existed
 # carry no assets to take it from.
