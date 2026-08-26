@@ -592,10 +592,6 @@ xdg_dest() {
   echo "${PREFIX:-/usr/local}/bin/xdg-open"
 }
 
-# Root is asked for the moment the prefix is not the user's to write, which is
-# the default on /usr/local. Naming the exact commands before the password
-# prompt rather than after is the difference between a considered yes and a
-# reflex one.
 # Root is never assumed. If the destination is not this user's to write, the
 # commands that would do it are printed and nothing happens.
 #

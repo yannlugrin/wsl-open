@@ -3,8 +3,49 @@ set -euo pipefail
 
 REPO="yannlugrin/winopen"
 SELF_URL="https://raw.githubusercontent.com/$REPO/main/install.sh"
-# Somewhere the user already owns, so the common path needs no privilege at all.
-# /usr/local is a deliberate choice, made by setting PREFIX.
+
+usage() {
+  cat <<EOF
+Usage: install.sh
+
+Installs winopen. One file on your PATH, and nothing else unless asked.
+
+  -h, --help   Show this help
+
+Environment:
+  PREFIX         Where to install (default: \$HOME/.local, which needs no root)
+  VERSION        A release tag to install (default: the latest release)
+  WITHOUT_DESKTOP  Set to 1 to skip the PowerShell helper that opens a URL on
+                 the virtual desktop you are looking at. Installed by default;
+                 it goes beside the tool and needs no privilege the tool does
+                 not already need.
+
+Piped from curl, the assignment goes on the right of the pipe -- on the left it
+would be set for curl, which does not care:
+
+  curl -fsSL $SELF_URL | PREFIX=/usr/local bash
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)  usage; exit 0 ;;
+    *)
+      echo "install.sh: unknown option: $1" >&2
+      echo >&2
+      usage >&2
+      exit 1 ;;
+  esac
+done
+
+# On by default. It lands in the same prefix as the tool, so it asks for no
+# privilege the tool does not already need, and without it URLs open wherever
+# Windows feels like -- which is the thing this tool exists to fix.
+case "${WITHOUT_DESKTOP:-0}" in
+  1|true|yes) want_desktop=false ;;
+  *)          want_desktop=true ;;
+esac
+
 PREFIX="${PREFIX:-$HOME/.local}"
 DEST="$PREFIX/bin/open"
 
@@ -61,7 +102,9 @@ if curl -fsSL "$base/$asset" -o "$workdir/$asset" 2>/dev/null; then
     exit 1
   }
   source_file="$workdir/winopen-${VERSION}/open"
-  helper_file="$workdir/winopen-${VERSION}/libexec/open-url.ps1"
+  if $want_desktop; then
+    helper_file="$workdir/winopen-${VERSION}/libexec/open-url.ps1"
+  fi
 else
   # Releases made before the tarball existed have no assets at all. Falling
   # back keeps `VERSION=1.0.1` installable rather than breaking older pins.
@@ -111,9 +154,10 @@ if [[ ! -w "$probe" ]]; then
     echo "Or install somewhere you own, which needs no root at all:"
     # Piped from curl, $0 is the shell, not something anyone can re-run.
     if [[ -f "$0" ]]; then
-      echo "    PREFIX=\$HOME/.local $0"
+      echo "    PREFIX=$HOME/.local $0"
     else
-      echo "    PREFIX=\$HOME/.local curl -fsSL $SELF_URL | bash"
+      # On the left of the pipe it would be set for curl, which does not care.
+      echo "    curl -fsSL $SELF_URL | PREFIX=$HOME/.local bash"
     fi
   } >&2
   exit 1
@@ -138,3 +182,12 @@ mv -f "$staged" "$DEST"
 staged=""
 
 echo "Installed successfully: $("$DEST" --version)"
+
+# Asked for it and did not get it: releases published before the helper existed
+# carry no assets to take it from.
+if $want_desktop && [[ -z "$helper_file" || ! -f "$helper_file" ]]; then
+  echo
+  echo "This release carries no virtual-desktop helper, so URLs go straight to"
+  echo "Windows, which opens them in whichever browser window was last active"
+  echo "-- possibly on a desktop you are not looking at."
+fi

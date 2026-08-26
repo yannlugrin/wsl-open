@@ -16,7 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from `curl`, that runs the download as root too. The previous default was
   `/usr/local`; pass `PREFIX=/usr/local` to keep it.
 
+- **`WITHOUT_DESKTOP=1`** skips the virtual-desktop helper, alongside the
+  existing `PREFIX` and `VERSION`. It is installed by default: it lands in the
+  same prefix as the tool, so it needs no privilege the tool does not, and it
+  is inert without `powershell.exe`.
+
 ### Fixed
+
+- **The documented `curl | bash` examples set their variables on the wrong side
+  of the pipe.** `PREFIX=~/.local curl ... | bash` applies the assignment to
+  `curl`, which ignores it, so the script never saw it and quietly used the
+  default. They now read `curl ... | PREFIX=~/.local bash`, as do
+  `install.sh --help` and the hints the installer prints.
 
 - **Installing to a prefix that does not exist yet asked for root.** The
   installer tested whether `$PREFIX/bin` was writable, which is false when it

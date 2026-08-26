@@ -77,9 +77,12 @@ fresh_prefix() {
 }
 
 run_installer() {
+  local mode="$1"; shift
   fresh_prefix
+  rm -rf "${PREFIX_DIR:?}/libexec"
   STDOUT="$(env -i HOME="$HOME" PATH="$STUB_DIR:/usr/bin:/bin" \
-    MODE="$1" PREFIX="$PREFIX_DIR" bash "$INSTALLER" 2>"$STUB_DIR/stderr")"
+    MODE="$mode" PREFIX="$PREFIX_DIR" ${WITHOUT_DESKTOP+WITHOUT_DESKTOP="$WITHOUT_DESKTOP"} \
+    bash "$INSTALLER" "$@" 2>"$STUB_DIR/stderr")"
   STATUS=$?
   STDERR="$(cat "$STUB_DIR/stderr")"
   INSTALLED="$("$PREFIX_DIR/bin/open" --version 2>&1 | head -1)"
@@ -94,13 +97,40 @@ run_installer assets
 assert_status 0
 if [[ "$INSTALLED" == open* ]]; then ok; else bad "expected the tool, got: $INSTALLED"; fi
 
-it "installs the PowerShell helper alongside the tool"
+it "installs the desktop helper by default"
 run_installer assets
 if [[ -f "$PREFIX_DIR/libexec/winopen/open-url.ps1" ]]; then ok; else
   bad "the helper was not installed"; fi
 
-it "installs without a helper when falling back to the tagged script"
-rm -rf "$PREFIX_DIR/libexec"
+it "needs no privilege the tool does not, so it says nothing about it"
+if [[ "$STDOUT" != *desktop* ]]; then ok; else
+  bad "unexpected chatter about the helper" "$STDOUT"; fi
+
+it "skips it when WITHOUT_DESKTOP=1"
+WITHOUT_DESKTOP=1 run_installer assets
+unset WITHOUT_DESKTOP
+if [[ ! -e "$PREFIX_DIR/libexec/winopen/open-url.ps1" ]]; then ok; else
+  bad "WITHOUT_DESKTOP=1 installed it anyway"; fi
+
+it "refuses an unknown option rather than ignoring it"
+run_installer assets --nonsense
+assert_status 1
+assert_stderr "unknown option"
+
+it "--help explains itself and exits 0"
+run_installer assets --help
+assert_status 0
+assert_stdout "Usage: install.sh"
+
+it "the help puts the assignment on the right of the pipe, where it works"
+if [[ "$STDOUT" == *"| PREFIX=/usr/local bash"* ]]; then ok; else
+  bad "the piped example would set the variable for curl, not bash"; fi
+
+it "says so when a release carries no helper to install"
+run_installer noassets
+assert_stdout "no virtual-desktop helper"
+
+it "has no helper to install when falling back to the tagged script"
 run_installer noassets
 assert_status 0
 if [[ ! -e "$PREFIX_DIR/libexec/winopen/open-url.ps1" ]]; then ok; else
