@@ -10,23 +10,42 @@ The installed command is called `open`.
 
 ## Install
 
-### Quick install
+winopen is a single Bash script. Read it, then put it on your `PATH`:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/yannlugrin/winopen/main/open
+less open                                     # it is 800 lines; have a look
+sudo install -m 755 open /usr/local/bin/open
+```
+
+That is the whole install. To remove it, delete it.
+
+The [virtual desktop handling](#urls-open-where-you-are-looking) needs one more
+file, which the release tarball carries:
+
+```bash
+sudo install -d /usr/local/libexec/winopen
+sudo install -m 644 libexec/open-url.ps1 /usr/local/libexec/winopen/
+```
+
+### With the install script
+
+Fetches the release tarball, verifies it against the published `SHA256SUMS`,
+and installs both files:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yannlugrin/winopen/main/install.sh | bash
 ```
 
-Install a specific version:
+It calls `sudo` when the prefix is not yours to write — unlike `open` itself,
+which never does. If you would rather not pipe a script into a shell that can
+then escalate, use the manual install above, or install somewhere you own:
 
 ```bash
-VERSION=1.0.0 curl -fsSL https://raw.githubusercontent.com/yannlugrin/winopen/main/install.sh | bash
+PREFIX=~/.local curl -fsSL .../install.sh | bash    # no root at any point
 ```
 
-Change install prefix (default: `/usr/local`):
-
-```bash
-PREFIX=~/.local curl -fsSL https://raw.githubusercontent.com/yannlugrin/winopen/main/install.sh | bash
-```
+Pin a version with `VERSION=1.1.0`, and change where it lands with `PREFIX`.
 
 ### From source
 
@@ -35,8 +54,6 @@ git clone https://github.com/yannlugrin/winopen.git
 cd winopen
 sudo install -m 755 open /usr/local/bin/open
 ```
-
-That is the whole install — one file on your `PATH`. To remove it, delete it.
 
 With [`just`](https://github.com/casey/just), which the project uses as its
 task runner:
